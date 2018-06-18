@@ -1,4 +1,6 @@
-source ENV['GEM_SOURCE'] || 'https://rubygems.org'
+# Internal gem source needed for beaker-pe-large-environments.
+# VPN access required.
+source ENV['GEM_SOURCE'] || 'https://artifactory.delivery.puppetlabs.net/artifactory/api/gems/rubygems/'
 
 group :test do
   gem "rake", ">= 10.1"
