@@ -1,4 +1,4 @@
-source "http://rubygems.delivery.puppetlabs.net"
+source ENV['GEM_SOURCE'] || 'https://rubygems.org'
 
 group :test do
   gem "rake", ">= 10.1"
