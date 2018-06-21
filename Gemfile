@@ -5,7 +5,7 @@ group :test do
   gem "beaker", "~> 3.0"
   gem "beaker-abs", "~> 0.2"
   gem "beaker-pe", "~> 1.11"
-  gem "puppet", ENV['PUPPET_VERSION'] || "~> 4.5"
+  gem "puppet", ENV['PUPPET_VERSION'] || "~> 4.10"
   gem "rspec", "~> 3.4"
   gem "rspec-puppet", '~> 2.0'
   gem "puppetlabs_spec_helper"
