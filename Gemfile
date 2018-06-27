@@ -9,7 +9,7 @@ group :test do
   gem "beaker-pe", "~> 1.11"
   gem "scooter", "~> 3.2"
   gem "beaker-pe-large-environments", "~> 0.1.8"
-  gem "puppet", ENV['PUPPET_VERSION'] || "~> 4.5"
+  gem "puppet", ENV['PUPPET_VERSION'] || "~> 5.3"
   gem "rspec", "~> 3.4"
   gem "rspec-puppet", '~> 2.0'
   gem "puppetlabs_spec_helper"
