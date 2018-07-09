@@ -967,6 +967,7 @@ gather_enterprise_files() {
     'client-tools/puppet-access.conf'
     'client-tools/puppet-code.conf'
     'client-tools/puppetdb.conf'
+    'client-tools/services.conf'
 
     'code/hiera.yaml'
 
