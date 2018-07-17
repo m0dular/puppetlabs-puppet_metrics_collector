@@ -43,4 +43,4 @@ for pid in ${pids};do
 done
 
 pushd junit &> /dev/null || exit 1
-python -m SimpleHTTPServer
+bundle exec ruby -run -e httpd -- --bind-address=127.0.0.1 --port=8000

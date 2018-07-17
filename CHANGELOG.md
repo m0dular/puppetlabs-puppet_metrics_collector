@@ -99,11 +99,26 @@ Major release of the Support Script bundled with PE 2016.5.0.
       lib/puppet_x/puppetlabs/support_script/v1/puppet-enterprise-support.sh
 
 
+## [Release 1.9.1] - 2018-07-16
+
+### Summary
+
+Bugfix release of the Support Script bundled with PE 2016.4.14. This version is
+functionally identical to 1.9.0, all fixes are for the test suite.
+
+
+### Bug Fixes
+
+  - Support script acceptance tests updated to use Puppet 4.10 and to respect
+    the GEM_SOURCE environment variable.
+
+
 ## [Release 1.9.0] - 2018-04-13
 
 ### Summary
 
-Feature and bugfix release of the Support Script bundled with PE 2016.4.11.
+Feature and bugfix release of the Support Script bundled with PE 2016.4.11,
+and 2016.4.13.
 
 ### Features
 
@@ -354,4 +369,5 @@ installations, not agents.
     seconds.
 
 [Release 2.7.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/5d0c9ba...2.7.0
+[Release 1.9.1]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/1.9.0...1.9.1
 [Release 1.9.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/c01f3b9...1.9.0
