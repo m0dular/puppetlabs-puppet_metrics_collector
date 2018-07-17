@@ -1,6 +1,6 @@
 {
   "name": "puppetlabs-pe_support_script",
-  "version": "2.7.0",
+  "version": "2.8.0",
   "author": "puppetlabs",
   "summary": "Provides the enterprise support command.",
   "license": "Puppet Enterprise Software License Agreement",
@@ -35,7 +35,8 @@
       "operatingsystem": "Ubuntu",
       "operatingsystemrelease": [
         "14.04",
-        "16.04"
+        "16.04",
+        "18.04"
       ]
     }
   ]

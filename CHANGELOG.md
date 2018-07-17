@@ -1,10 +1,27 @@
+## [Release 2.8.0] - 2018-07-17
+
+### Summary
+
+Feature and bugfix release of the Support Script bundled with PE 2017.3.9
+and PE 2018.1.3. See release notes for version 1.9.1 for a list of bugfixes.
+
+### Features
+
+  - Added support for Ubuntu 18.04.
+
+  - Support script now collects the  output of `puppet infrastructure status`
+    if the client-tools package is installed and configured. This is useful
+    for checking the state of a HA deployment along with other infrastructure
+    nodes hosting PE services.
+
+
 ## [Release 2.7.0] - 2018-04-13
 
 ### Summary
 
-Feature and bugfix release of the Support Script bundled with PE 2017.3.6
-and PE 2018.1.0. See release notes for version 1.9.0 for a list of
-improvements and bugfixes.
+Feature and bugfix release of the Support Script bundled with PE 2017.3.6,
+2017.3.8, 2018.1.0, and 2018.1.2. See release notes for version 1.9.0 for a
+list of improvements and bugfixes.
 
 
 ## Release 2.6.0
@@ -368,6 +385,7 @@ installations, not agents.
   - Console status check timeout has been increased from 5 seconds to 60
     seconds.
 
+[Release 2.8.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/2.7.0...2.8.0
 [Release 2.7.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/5d0c9ba...2.7.0
 [Release 1.9.1]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/1.9.0...1.9.1
 [Release 1.9.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/c01f3b9...1.9.0
