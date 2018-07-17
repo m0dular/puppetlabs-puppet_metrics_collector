@@ -10,8 +10,25 @@
 #     ./ext/run_acceptance_tests.sh 2017.1
 
 PE_TEST_SERIES=${1-"2017.3"}
-LATEST_GOOD_BUILD=$(curl -q "http://getpe.delivery.puppetlabs.net/latest/${PE_TEST_SERIES}")
 
+if (( $(bc <<< "${PE_TEST_SERIES} > 2017.3") )); then
+  TEST_MATRIX=('centos6-64mdca'
+               'centos7-64mdca'
+               'sles12-64mdca'
+               'ubuntu1604-64mdca'
+               'ubuntu1804-64mdca'
+               'centos7-64am-64ad-64ac-64compile_master.af')
+else
+  TEST_MATRIX=('centos6-64mdca'
+               'centos7-64mdca'
+               'sles11-64mdca'
+               'sles12-64mdca'
+               'ubuntu1404-64mdca'
+               'ubuntu1604-64mdca'
+               'centos7-64am-64ad-64ac-64compile_master.af')
+fi
+
+LATEST_GOOD_BUILD=$(curl -q "http://getpe.delivery.puppetlabs.net/latest/${PE_TEST_SERIES}")
 echo "Testing build: ${LATEST_GOOD_BUILD?}"
 
 export BEAKER_PE_DIR="http://enterprise.delivery.puppetlabs.net/${PE_TEST_SERIES}/ci-ready/"
@@ -32,7 +49,7 @@ execute_beaker() {
 }
 
 pids=""
-for config in tests/beaker/configs/* ; do
+for config in "${TEST_MATRIX[@]}"; do
   echo "Spawning test for: $(basename "${config}")"
   execute_beaker "${config}" &
   pids="${pids} $!"
