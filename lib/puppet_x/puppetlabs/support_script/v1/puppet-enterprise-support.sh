@@ -1467,7 +1467,7 @@ classifier_data() {
 # Gather infrastructure status
 #
 # Global Variables Used:
-#   PUPPET_BIN_DIR
+#   None
 #
 # Arguments:
 #   None
@@ -1475,8 +1475,9 @@ classifier_data() {
 # Returns:
 #   None
 pe_infra_status() {
-  if [[ -e /etc/puppetlabs/client-tools/services.conf ]]; then
-    run_diagnostic "${PUPPET_BIN_DIR?}/puppet infrastructure status --format json" 'enterprise/pe_infra_status.json'
+  if [[ -e /etc/puppetlabs/client-tools/services.conf &&
+        -x /opt/puppetlabs/bin/puppet-infrastructure ]]; then
+    run_diagnostic '/opt/puppetlabs/bin/puppet-infrastructure status --format json' 'enterprise/pe_infra_status.json'
   fi
 }
 
@@ -1653,6 +1654,7 @@ free_checks
 list_all_services
 grab_env_vars
 can_contact_master
+pe_infra_status
 pe_logs
 pe_metrics
 get_state
@@ -1698,10 +1700,6 @@ fi
 
 if is_package_installed 'pe-activemq'; then
   activemq_limits
-fi
-
-if is_package_installed 'pe-client-tools'; then
-  pe_infra_status
 fi
 
 tar_change_directory=$(dirname "${DROP}")
