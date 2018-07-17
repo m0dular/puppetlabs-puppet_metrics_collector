@@ -1464,6 +1464,22 @@ classifier_data() {
   fi
 }
 
+# Gather infrastructure status
+#
+# Global Variables Used:
+#   PUPPET_BIN_DIR
+#
+# Arguments:
+#   None
+#
+# Returns:
+#   None
+pe_infra_status() {
+  if [[ -e /etc/puppetlabs/client-tools/services.conf ]]; then
+    run_diagnostic "${PUPPET_BIN_DIR?}/puppet infrastructure status --format json" 'enterprise/pe_infra_status.json'
+  fi
+}
+
 # Write metadata to a JSON file
 #
 # This function writes out a metadata file which contains information about
@@ -1682,6 +1698,10 @@ fi
 
 if is_package_installed 'pe-activemq'; then
   activemq_limits
+fi
+
+if is_package_installed 'pe-client-tools'; then
+  pe_infra_status
 fi
 
 tar_change_directory=$(dirname "${DROP}")
