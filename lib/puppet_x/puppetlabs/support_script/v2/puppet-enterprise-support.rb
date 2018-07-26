@@ -214,27 +214,27 @@ module PuppetX
         pe_directories += conf_puppet_master_modulepath.split(':')
         pe_directories.uniq.sort.each do |directory|
           directory_file_name = directory.tr('/', '_')
-          exec_drop('ls', "-alR #{directory}", scope_directory, "list_#{directory_file_name}.txt".squeeze('_'))
+          exec_drop("ls -alR #{directory}", scope_directory, "list_#{directory_file_name}.txt".squeeze('_'))
         end
 
         # Collect Puppet certs.
-        exec_drop("#{@paths[:puppet_bin]}/puppet", 'cert list --all', scope_directory, 'puppet_cert_list.txt')
+        exec_drop("#{@paths[:puppet_bin]}/puppet cert list --all", scope_directory, 'puppet_cert_list.txt')
 
         # Collect Puppet config.
-        exec_drop("#{@paths[:puppet_bin]}/puppet", 'config print --color=false',         scope_directory, 'puppet_config_print.txt')
-        exec_drop("#{@paths[:puppet_bin]}/puppet", 'config print --color=false --debug', scope_directory, 'puppet_config_print_debug.txt')
+        exec_drop("#{@paths[:puppet_bin]}/puppet config print --color=false",         scope_directory, 'puppet_config_print.txt')
+        exec_drop("#{@paths[:puppet_bin]}/puppet config print --color=false --debug", scope_directory, 'puppet_config_print_debug.txt')
 
         # Collect Puppet facts.
-        exec_drop("#{@paths[:puppet_bin]}/puppet", 'facts --color=false',         scope_directory, 'puppet_facts.txt')
-        exec_drop("#{@paths[:puppet_bin]}/puppet", 'facts --color=false --debug', scope_directory, 'puppet_facts_debug.txt')
+        exec_drop("#{@paths[:puppet_bin]}/puppet facts --color=false",         scope_directory, 'puppet_facts.txt')
+        exec_drop("#{@paths[:puppet_bin]}/puppet facts --color=false --debug", scope_directory, 'puppet_facts_debug.txt')
 
         # Collect Puppet and Puppetserver gems.
-        exec_drop("#{@paths[:puppet_bin]}/gem",              '--list --local',     scope_directory, 'puppet_gem_list.txt')
-        exec_drop("#{@paths[:puppetlabs_bin]}/puppetserver", 'gem --list --local', scope_directory, 'puppetserver_gem_list.txt')
+        exec_drop("#{@paths[:puppet_bin]}/gem --list --local",                  scope_directory, 'puppet_gem_list.txt')
+        exec_drop("#{@paths[:puppetlabs_bin]}/puppetserver gem --list --local", scope_directory, 'puppetserver_gem_list.txt')
 
         # Collect Puppet modules.
-        exec_drop("#{@paths[:puppet_bin]}/puppet", 'module list --color=false',    scope_directory, 'puppet_modules_list.txt')
-        exec_drop("#{@paths[:puppet_bin]}/puppet", 'module list --render-as yaml', scope_directory, 'puppet_modules_list.yaml')
+        exec_drop("#{@paths[:puppet_bin]}/puppet module list --color=false",    scope_directory, 'puppet_modules_list.txt')
+        exec_drop("#{@paths[:puppet_bin]}/puppet module list --render-as yaml", scope_directory, 'puppet_modules_list.yaml')
 
         # Collect Puppet Enterprise module changes.
         pe_module_path = '/opt/puppetlabs/puppet/modules'
@@ -243,7 +243,7 @@ module PuppetX
           pe_module = "#{pe_module_path}/#{file}"
           next unless File.directory?(pe_module)
           data_drop("#{pe_module}:", scope_directory, 'puppet_enterprise_module_changes.txt')
-          exec_drop("#{@paths[:puppet_bin]}/puppet", "module changes #{pe_module} --render-as yaml", scope_directory, 'puppet_enterprise_module_changes.txt')
+          exec_drop("#{@paths[:puppet_bin]}/puppet module changes #{pe_module} --render-as yaml", scope_directory, 'puppet_enterprise_module_changes.txt')
         end
 
         # Collect Puppet Enterprise Environment diagnostics.
@@ -253,8 +253,8 @@ module PuppetX
           environment_manifests = environments['environments'][environment]['settings']['manifest']
           environment_directory = File.dirname(environment_manifests)
           environment_modules_drop_directory = "#{scope_directory}/environments/#{environment}/modules"
-          exec_drop("#{@paths[:puppet_bin]}/puppet", "module list --color=false --environment=#{environment}",    environment_modules_drop_directory, 'puppet_modules_list.txt')
-          exec_drop("#{@paths[:puppet_bin]}/puppet", "module list --render-as yaml --environment=#{environment}", environment_modules_drop_directory, 'puppet_modules_list.yaml')
+          exec_drop("#{@paths[:puppet_bin]}/puppet module list --color=false --environment=#{environment}",    environment_modules_drop_directory, 'puppet_modules_list.txt')
+          exec_drop("#{@paths[:puppet_bin]}/puppet module list --render-as yaml --environment=#{environment}", environment_modules_drop_directory, 'puppet_modules_list.yaml')
           # Scope Redirect: This drops into etc instead of enterprise.
           copy_drop("#{environment_directory}/environment.conf", @drop_directory)
           copy_drop("#{environment_directory}/hiera.yaml",       @drop_directory)
@@ -282,35 +282,35 @@ module PuppetX
 
         # Collect Puppet Enterprise Code Manager/r10k diagnostics.
         codemanager_dir = "#{@paths[:server_data]}/code-manager"
-        exec_drop('du', "-h --max-depth=1 #{codemanager_dir}", scope_directory, 'r10k_cache_sizes_from_du.txt') if File.directory?(codemanager_dir)
+        exec_drop("du -h --max-depth=1 #{codemanager_dir}", scope_directory, 'r10k_cache_sizes_from_du.txt') if File.directory?(codemanager_dir)
         r10k_yaml = '/etc/puppetlabs/r10k/r10k.yaml'
         code_manager_yaml = "#{codemanager_dir}/r10k.yaml"
         r10k_config = File.exist?(r10k_yaml) ? r10k_yaml : nil
         r10k_config = code_manager_yaml if File.exist?(code_manager_yaml)
         if r10k_config
-          exec_drop("#{@paths[:puppet_bin]}/r10k", "deploy display -p --detail -c #{r10k_config}", scope_directory, 'r10k_deploy_display.txt')
+          exec_drop("#{@paths[:puppet_bin]}/r10k deploy display -p --detail -c #{r10k_config}", scope_directory, 'r10k_deploy_display.txt')
         end
 
         # Collect Puppet Enterprise ActiveMQ diagnostics.
         data_drop('File descriptors in use by pe-activemq:', scope_directory, 'activemq_resource_limits.txt')
-        exec_drop('lsof', '-u pe-activemq | wc -l',          scope_directory, 'activemq_resource_limits.txt')
+        exec_drop('lsof -u pe-activemq | wc -l',             scope_directory, 'activemq_resource_limits.txt')
         data_drop('Resource limits for pe-activemq:',        scope_directory, 'activemq_resource_limits.txt')
-        exec_drop('ulimit', '-a',                            scope_directory, 'activemq_resource_limits.txt', 'pe-activemq')
+        exec_drop('ulimit -a',                               scope_directory, 'activemq_resource_limits.txt', 'pe-activemq')
 
         # Collect Puppet Enterprise Mcollective diagnostics.
         if user_exists?('peadmin')
           ping_command      = %(- peadmin --shell /bin/bash --command "#{@paths[:puppet_bin]}/mco ping")
           inventory_command = %(- peadmin --shell /bin/bash --command "#{@paths[:puppet_bin]}/mco inventory #{@platform[:fqdn]}")
           timeout = 16
-          exec_drop('su', ping_command,      scope_directory, 'mco_ping.txt', timeout)
-          exec_drop('su', inventory_command, scope_directory, 'mco_inventory.txt', timeout)
+          exec_drop("su #{ping_command}",      scope_directory, 'mco_ping.txt', timeout)
+          exec_drop("su #{inventory_command}", scope_directory, 'mco_inventory.txt', timeout)
         end
 
         # Collect Puppet Enterprise FileSync diagnostics.
         code_staging_directory = '/etc/puppetlabs/code-staging'
         filesync_directory = "#{@paths[:server_data]}/puppetserver/filesync"
-        exec_drop('du', "-h --max-depth=1 #{code_staging_directory}", scope_directory, 'code_staging_sizes_from_du.txt') if File.directory?(code_staging_directory)
-        exec_drop('du', "-h --max-depth=1 #{filesync_directory}",     scope_directory, 'filesync_sizes_from_du.txt')     if File.directory?(filesync_directory)
+        exec_drop("du -h --max-depth=1 #{code_staging_directory}", scope_directory, 'code_staging_sizes_from_du.txt') if File.directory?(code_staging_directory)
+        exec_drop("du -h --max-depth=1 #{filesync_directory}",     scope_directory, 'filesync_sizes_from_du.txt')     if File.directory?(filesync_directory)
         if @options[:filesync]
           # Scope Redirect: This drops into etc instead of enterprise.
           copy_drop(code_staging_directory, @drop_directory)
@@ -319,9 +319,9 @@ module PuppetX
         end
 
         # Collect Puppet Enterprise Infrastructure diagnostics.
-        exec_drop("#{@paths[:puppetlabs_bin]}/puppet-infrastructure", 'status --format json',                 scope_directory, 'puppet_infra_status.json')
-        exec_drop("#{@paths[:puppetlabs_bin]}/puppet-infrastructure", 'tune --color=false --debug',           scope_directory, 'puppet_infra_tune.txt')
-        exec_drop("#{@paths[:puppetlabs_bin]}/puppet-infrastructure", 'tune --color=false --debug --current', scope_directory, 'puppet_infra_tune_current.txt')
+        exec_drop("#{@paths[:puppetlabs_bin]}/puppet-infrastructure status --format json",                 scope_directory, 'puppet_infra_status.json')
+        exec_drop("#{@paths[:puppetlabs_bin]}/puppet-infrastructure tune --color=false --debug",           scope_directory, 'puppet_infra_tune.txt')
+        exec_drop("#{@paths[:puppetlabs_bin]}/puppet-infrastructure tune --color=false --debug --current", scope_directory, 'puppet_infra_tune_current.txt')
 
         # Collect Puppet Enterprise Metrics.
         recreate_parent_path = false
@@ -356,7 +356,7 @@ module PuppetX
           copy_drop("/etc/sysconfig/#{service}", @drop_directory)
         end
 
-        exec_drop('cat', '/var/lib/peadmin/.mcollective', "#{scope_directory}/mcollective", 'peadmin_mcollective_client.cfg')
+        exec_drop('cat /var/lib/peadmin/.mcollective', "#{scope_directory}/mcollective", 'peadmin_mcollective_client.cfg')
 
         # Redact passwords from config files.
         # Note: This does not fit into an existing *_drop method.
@@ -382,7 +382,7 @@ module PuppetX
         copy_drop('/var/log/messages',     @drop_directory)
         copy_drop('/var/log/syslog',       @drop_directory)
         copy_drop('/var/log/system',       @drop_directory)
-        exec_drop('dmesg', '',             scope_directory, 'dmesg.txt')
+        exec_drop('dmesg',                 scope_directory, 'dmesg.txt')
 
         copy_drop('/var/log/puppetlabs/installer', @drop_directory)
 
@@ -394,10 +394,10 @@ module PuppetX
         end
 
         puppet_enterprise_services_list.each do |service|
-          exec_drop('journalctl', "--full --output=short-iso --unit=#{service} --since '#{@options[:log_age]} days ago'", scope_directory, "#{service}-journalctl.log")
+          exec_drop("journalctl --full --output=short-iso --unit=#{service} --since '#{@options[:log_age]} days ago'", scope_directory, "#{service}-journalctl.log")
         end
 
-        exec_drop('cat', '/var/lib/peadmin/.mcollective.d/client.log', scope_directory, 'peadmin_mcollective_client.log')
+        exec_drop('cat /var/lib/peadmin/.mcollective.d/client.log', scope_directory, 'peadmin_mcollective_client.log')
 
         recreate_parent_path = false
         puppet_enterprise_database_upgrade_log_list.each do |source|
@@ -414,15 +414,15 @@ module PuppetX
 
         scope_directory = "#{@drop_directory}/networking"
 
-        data_drop(@platform[:hostname],   scope_directory, 'hostname.txt')
-        exec_drop('ifconfig',  '-a',      scope_directory, 'ifconfig.txt')
-        exec_drop('iptables',  '-L',      scope_directory, 'iptables.txt')
-        exec_drop('ip6tables', '-L',      scope_directory, 'iptables.txt')
-        exec_drop('netstat',   '-anptu',  scope_directory, 'ports.txt')
-        exec_drop('ntpq',      '-p',      scope_directory, 'ntpq.txt')
+        data_drop(@platform[:hostname], scope_directory, 'hostname.txt')
+        exec_drop('ifconfig -a',        scope_directory, 'ifconfig.txt')
+        exec_drop('iptables -L',        scope_directory, 'iptables.txt')
+        exec_drop('ip6tables -L',       scope_directory, 'iptables.txt')
+        exec_drop('netstat -anptu',     scope_directory, 'ports.txt')
+        exec_drop('ntpq -p',            scope_directory, 'ntpq.txt')
 
         unless executable?('iptables')
-          exec_drop('lsmod', '| grep ip', scope_directory, 'ip_modules.txt')
+          exec_drop('lsmod | grep ip', scope_directory, 'ip_modules.txt')
         end
 
         # Puppet Networking:
@@ -436,7 +436,7 @@ module PuppetX
             mapped_hostname = exec_return_result(command)
             data_drop(mapped_hostname, scope_directory, 'ip_address_hostnames.txt')
           end
-          exec_drop('ping', "-c 1 #{conf_puppet_agent_server}", scope_directory, 'puppet_ping.txt')
+          exec_drop("ping -c 1 #{conf_puppet_agent_server}", scope_directory, 'puppet_ping.txt')
         end
 
         sos_clean("#{scope_directory}/hostname.txt", "#{@drop_directory}/hostname")
@@ -451,15 +451,15 @@ module PuppetX
 
         scope_directory = "#{@drop_directory}/resources"
 
-        exec_drop('df',   '-h',  scope_directory, 'df_h_output.txt')
-        exec_drop('df',   '-i',  scope_directory, 'df_i_output.txt')
-        exec_drop('df',   '-k',  scope_directory, 'df_k_output.txt')
-        exec_drop('free', '-h',  scope_directory, 'free_h.txt')
+        exec_drop('df -h',   scope_directory, 'df_h_output.txt')
+        exec_drop('df -i',   scope_directory, 'df_i_output.txt')
+        exec_drop('df -k',   scope_directory, 'df_k_output.txt')
+        exec_drop('free -h', scope_directory, 'free_h.txt')
 
         # Puppet Resources:
 
-        exec_drop('ls',   "-1 -d #{@paths[:server_data]}/postgresql/*/data  | xargs du -sh", scope_directory, 'db_sizes_from_du.txt')
-        exec_drop('ls',   "-1 -d #{@paths[:server_data]}/postgresql/*/PG_9* | xargs du -sh", scope_directory, 'db_table_sizes_from_du.txt')
+        exec_drop("ls -1 -d #{@paths[:server_data]}/postgresql/*/data  | xargs du -sh", scope_directory, 'db_sizes_from_du.txt')
+        exec_drop("ls -1 -d #{@paths[:server_data]}/postgresql/*/PG_9* | xargs du -sh", scope_directory, 'db_table_sizes_from_du.txt')
 
         psql_data = psql_database_sizes
         data_drop(psql_data, scope_directory, 'db_sizes_from_psql.txt')
@@ -481,17 +481,17 @@ module PuppetX
 
         scope_directory = "#{@drop_directory}/system"
 
-        exec_drop('env',         '',           scope_directory, 'env.txt')
-        exec_drop('lsb_release', '-a',         scope_directory, 'lsb_release.txt')
-        exec_drop('ps',          '-aux',       scope_directory, 'ps_aux.txt')
-        exec_drop('ps',          '-ef',        scope_directory, 'ps_ef.txt')
-        exec_drop('sestatus',    '',           scope_directory, 'selinux.txt')
-        exec_drop('chkconfig',   '--list',     scope_directory, 'services.txt')
-        exec_drop('svcs',        '-a',         scope_directory, 'services.txt')
-        exec_drop('systemctl',   'list-units', scope_directory, 'services.txt')
-        exec_drop('umask',       '',           scope_directory, 'umask.txt')
-        exec_drop('uname',       '-a',         scope_directory, 'uname.txt')
-        exec_drop('uptime',      '',           scope_directory, 'uptime.txt')
+        exec_drop('env',                  scope_directory, 'env.txt')
+        exec_drop('lsb_release -a',       scope_directory, 'lsb_release.txt')
+        exec_drop('ps -aux',              scope_directory, 'ps_aux.txt')
+        exec_drop('ps -ef',               scope_directory, 'ps_ef.txt')
+        exec_drop('sestatus',             scope_directory, 'selinux.txt')
+        exec_drop('chkconfig --list',     scope_directory, 'services.txt')
+        exec_drop('svcs -a',              scope_directory, 'services.txt')
+        exec_drop('systemctl list-units', scope_directory, 'services.txt')
+        exec_drop('umask',                scope_directory, 'umask.txt')
+        exec_drop('uname -a',             scope_directory, 'uname.txt')
+        exec_drop('uptime',               scope_directory, 'uptime.txt')
       end
 
       #=========================================================================
@@ -503,9 +503,14 @@ module PuppetX
       # Rather than testing for the existance of a related feature the calling scope,
       # test for the existance of the command in the method.
 
-      def exec_drop(command, options_and_or_commands, dst, file, timeout = 0)
+      def exec_drop(command_line, dst, file, timeout = 0)
+        command = command_line.split(' ')[0]
+        unless command
+          logline "exec_drop: command not found in: #{command_line}"
+          return false
+        end
         file_name = "#{dst}/#{file}"
-        command_line = %(#{command} #{options_and_or_commands} 2>&1 >> "#{file_name}")
+        command_line = %(#{command_line} 2>&1 >> "#{file_name}")
         unless executable?(command)
           logline "exec_drop: command not found: #{command} cannot execute: #{command_line}"
           return false
@@ -557,7 +562,7 @@ module PuppetX
           return false
         end
         logline "copy_drop: #{command_line}"
-        display " ** Copying: #{src}"
+        display " ** Saving: #{src}"
         display
         return if noop?
         return false unless exec_return_status(%(mkdir --parents "#{dst}"))
@@ -1011,16 +1016,16 @@ module PuppetX
 
       # Display an error message, and exit.
 
-      def fail_and_exit(info)
-        display_warning(info)
+      def fail_and_exit(datum)
+        display_warning(datum)
         exit 1
       end
 
       # Log to a log file.
       # Instance Variables: @log_file
 
-      def logline(info)
-        File.open(@log_file, 'a') { |f| f.puts(info) }
+      def logline(datum)
+        File.open(@log_file, 'a') { |f| f.puts(datum) }
       end
 
       # Execute a command line and return the result or an empty string.
@@ -1078,9 +1083,9 @@ module PuppetX
 
       # Reformat JSON Pretty.
 
-      def pretty_json(info)
-        return info if info == ''
-        JSON.pretty_generate(JSON.parse(info))
+      def pretty_json(datum)
+        return datum if datum == ''
+        JSON.pretty_generate(JSON.parse(datum))
       end
 
       #=========================================================================
