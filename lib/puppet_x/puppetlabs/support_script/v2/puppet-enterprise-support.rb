@@ -1038,7 +1038,7 @@ module PuppetX
         logline "error: exec_return_result: command failed: #{command_line}"
         display "    Command failed: #{command_line}"
         display
-        return ''
+        ''
       end
 
       # Execute a command line and return true or false.
