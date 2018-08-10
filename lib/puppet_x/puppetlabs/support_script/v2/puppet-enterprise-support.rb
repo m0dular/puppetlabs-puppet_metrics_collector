@@ -158,6 +158,7 @@ module PuppetX
           'apt/sources.list.d',
           'hosts',
           'nsswitch.conf',
+          'os-release',
           'resolv.conf',
           'yum.conf',
           'yum.repos.d',
@@ -279,6 +280,8 @@ module PuppetX
         data_drop(psql_stat_activity,           scope_directory, 'postgres_stat_activity.txt')
         data_drop(psql_rbac_directory_settings, scope_directory, 'rbac_directory_settings.txt')
         data_drop(psql_thundering_herd,         scope_directory, 'thundering_herd.txt')
+        data_drop(psql_replication_slots,       scope_directory, 'postgres_replication_slots.txt')
+        data_drop(psql_replication_status,      scope_directory, 'postgres_replication_status.txt')
 
         # Collect Puppet Enterprise Code Manager/r10k diagnostics.
         codemanager_dir = "#{@paths[:server_data]}/code-manager"
@@ -325,8 +328,8 @@ module PuppetX
 
         # Collect Puppet Enterprise Metrics.
         recreate_parent_path = false
-        copy_drop('/opt/puppetlabs/pe_metric_curl_cron_jobs', scope_directory, recreate_parent_path)
-        copy_drop('/opt/puppetlabs/puppet-metrics-collector', scope_directory, recreate_parent_path)
+        find_drop('/opt/puppetlabs/pe_metric_curl_cron_jobs', @drop_directory, @options[:log_age], recreate_parent_path)
+        find_drop('/opt/puppetlabs/puppet-metrics-collector', @drop_directory, @options[:log_age], recreate_parent_path)
       end
 
       # Collect system configuration files.
@@ -386,12 +389,8 @@ module PuppetX
 
         copy_drop('/var/log/puppetlabs/installer', @drop_directory)
 
-        # Copy log files based upon age.
-        # Note: This does not fit into an existing *_drop method.
-        unless noop?
-          command = %(find /var/log/puppetlabs -type f -mtime -#{@options[:log_age]} | xargs --no-run-if-empty cp --parents --preserve --target-directory #{@drop_directory})
-          exec_return_status(command)
-        end
+        recreate_parent_path = true
+        find_drop('/var/log/puppetlabs', @drop_directory, @options[:log_age], recreate_parent_path)
 
         puppet_enterprise_services_list.each do |service|
           exec_drop("journalctl --full --output=short-iso --unit=#{service} --since '#{@options[:log_age]} days ago'", scope_directory, "#{service}-journalctl.log")
@@ -554,15 +553,32 @@ module PuppetX
       # test for the existance of the source in the method.
 
       def copy_drop(src, dst, recreate_parent_path = true)
-        parents_option = recreate_parent_path ? ' --parents ' : ''
-        recursive_option = File.directory?(src) ? ' --recursive ' : ''
-        command_line = %(cp --dereference --preserve #{parents_option}#{recursive_option} "#{src}" "#{dst}")
+        parents_option = recreate_parent_path ? ' --parents' : ''
+        recursive_option = File.directory?(src) ? ' --recursive' : ''
+        command_line = %(cp --dereference --preserve #{parents_option} #{recursive_option} "#{src}" "#{dst}")
         unless File.exist?(src)
           logline "copy_drop: source not found: #{src}"
           return false
         end
         logline "copy_drop: #{command_line}"
         display " ** Saving: #{src}"
+        display
+        return if noop?
+        return false unless exec_return_status(%(mkdir --parents "#{dst}"))
+        exec_return_status(command_line)
+      end
+
+      # Copy files newer than log_age to the destination directory, recreating the parent path by default.
+
+      def find_drop(src, dst, log_age, recreate_parent_path = true)
+        parents_option = recreate_parent_path ? ' --parents' : ''
+        command_line = %(find #{src} -type f -mtime -#{log_age} | xargs --no-run-if-empty cp --preserve #{parents_option} --target-directory #{dst})
+        unless File.exist?(src)
+          logline "find_drop: source not found: #{src}"
+          return false
+        end
+        logline "find_drop: #{command_line}"
+        display " ** Saving: #{src} files newer than #{log_age} days"
         display
         return if noop?
         return false unless exec_return_status(%(mkdir --parents "#{dst}"))
@@ -855,6 +871,20 @@ module PuppetX
           group_rdn, group_object_class, group_name_attr, group_member_attr, group_lookup_attr FROM directory_settings \
           ) row;'
         command = %(su - pe-postgres --shell /bin/bash --command "#{@paths[:server_bin]}/psql --dbname pe-rbac --command '#{sql}'")
+        exec_return_result(command)
+      end
+
+      def psql_replication_slots
+        return '' unless package_installed?('pe-puppetdb') && user_exists?('pe-postgres')
+        sql = "SELECT * FROM pg_replication_slots;"
+        command = %(su - pe-postgres --shell /bin/bash --command "#{@paths[:server_bin]}/psql --dbname pe-puppetdb --command \\"#{sql}\\"")
+        exec_return_result(command)
+      end
+
+      def psql_replication_status
+        return '' unless package_installed?('pe-puppetdb') && user_exists?('pe-postgres')
+        sql = "SELECT * FROM pg_stat_replication;"
+        command = %(su - pe-postgres --shell /bin/bash --command "#{@paths[:server_bin]}/psql --dbname pe-puppetdb --command \\"#{sql}\\"")
         exec_return_result(command)
       end
 
@@ -1206,7 +1236,7 @@ if File.expand_path(__FILE__) == File.expand_path($PROGRAM_NAME)
         puts "Error: The log-age parameter must be a number, or the string 'all'. Got: #{log_age}"
         exit 1
       end
-      @options[:log_age] = log_age
+      options[:log_age] = log_age
     end
     options[:noop] = false
     opts.on('-n', '--noop', 'Enable noop mode') do
