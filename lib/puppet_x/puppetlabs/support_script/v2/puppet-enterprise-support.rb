@@ -219,7 +219,11 @@ module PuppetX
         end
 
         # Collect Puppet certs.
-        exec_drop("#{@paths[:puppet_bin]}/puppet cert list --all", scope_directory, 'puppet_cert_list.txt')
+        if executable_puppet_subcommand?('puppetserver', 'ca')
+          exec_drop("#{@paths[:puppet_bin]}/puppetserver ca list --all", scope_directory, 'puppetserver_cert_list.txt')
+        else
+          exec_drop("#{@paths[:puppet_bin]}/puppet cert list --all", scope_directory, 'puppet_cert_list.txt')
+        end
 
         # Collect Puppet config.
         exec_drop("#{@paths[:puppet_bin]}/puppet config print --color=false",         scope_directory, 'puppet_config_print.txt')
@@ -1102,6 +1106,18 @@ module PuppetX
 
       def executable?(command)
         Facter::Core::Execution.which(command)
+      end
+
+      # Test for command subcommand existance.
+
+      def executable_puppet_subcommand?(command, subcommand)
+        return false unless Facter::Core::Execution.which(command)
+        command_line = "#{command} #{subcommand} --help"
+        result = Facter::Core::Execution.execute(command_line)
+        return false unless $?.to_i.zero?
+        return false if result.match(/for help on available puppet subcommands/)
+        return false if result.match(/is not a puppetserver command/)
+        return true
       end
 
       # Test for noop mode.
