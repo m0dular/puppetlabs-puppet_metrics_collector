@@ -81,10 +81,13 @@ compile masters, MCollective hubs and spokes, etc. Therefore, this module
 only supports OS versions listed as "Puppet master platforms" for a
 given PE release.
 
-For example, the list of Master Platforms for the 2016.4 LTS series is:
+For example, the list of Master Platforms for the 2016.4 LTS series is at:
 
-https://docs.puppet.com/pe/2016.4/sys_req_os.html#puppet-master-platforms
+https://puppet.com/docs/pe/2016.4/sys_req_os.html#puppet-master-platforms
 
+The list for the 2018.1 LTS series is at:
+
+https://puppet.com/docs/pe/2018.1/supported_operating_systems.html#puppet-master-platforms
 
 ## Development
 
@@ -167,7 +170,7 @@ by files in the tests/beaker/configs/ directory. Tests can take over ten
 minutes to run, but when they've finished a Python webserver will be launched
 to display the results:
 
-  http://localhost:8000
+    http://localhost:8000
 
 [strict-mode]: http://redsymbol.net/articles/unofficial-bash-strict-mode/
 [acceptance-key]: https://confluence.puppetlabs.com/display/QE/SSH+access+to+vmpooler+VMs

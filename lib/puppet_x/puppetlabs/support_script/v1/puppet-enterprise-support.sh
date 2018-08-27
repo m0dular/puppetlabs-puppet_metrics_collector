@@ -1737,7 +1737,7 @@ display "We recommend that you examine the collected data before forwarding to P
 display "as it may contain sensitive information that you will wish to redact."
 display "An overview of data collected by this tool can be found at:"
 display_newline
-display "  https://docs.puppet.com/pe/latest/overview_getting_support.html#the-pe-support-script"
+display "  https://puppet.com/docs/pe/2018.1/getting_support_for_pe.html#pe-support-script"
 display_newline
 display "Please submit ${support_archive} to Puppet Support using the upload site you've been invited to."
 display_newline

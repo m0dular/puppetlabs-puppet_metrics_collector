@@ -47,7 +47,7 @@
   /etc/puppetlabs on the node where the support script
   was run.
 
-  https://docs.puppet.com/pe/2016.4/install_what_and_where.html#configuration-files-installed-with-pe
+  https://puppet.com/docs/pe/2018.1/what_gets_installed_and_where.html#configuration-files-installed
 
 - puppet_enterprise_support/enterprise/etc/puppetlabs/activemq/
 - puppet_enterprise_support/enterprise/etc/puppetlabs/activemq/activemq.xml
@@ -310,7 +310,7 @@
   On systemd-based operating systems, `<service>-journalctl.log` files will
   be collected for each PE `<service>`.
 
-  https://docs.puppet.com/pe/2016.4/install_what_and_where.html#log-files-installed-with-pe
+  https://puppet.com/docs/pe/2018.1/what_gets_installed_and_where.html#log-files-installed
 
 - puppet_enterprise_support/logs/activemq/
 - puppet_enterprise_support/logs/console-services/
