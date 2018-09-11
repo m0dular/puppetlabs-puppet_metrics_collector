@@ -14,10 +14,15 @@ module PuppetX
           puppetlabs_bin: '/opt/puppetlabs/bin',
           puppet_bin:     '/opt/puppetlabs/puppet/bin',
           server_bin:     '/opt/puppetlabs/server/bin',
-          server_data:    '/opt/puppetlabs/server/data',
+          server_data:    '/opt/puppetlabs/server/data'
         }
 
         @options = options
+        @unit_test = @options[:unit_test]
+
+        # Disable the initialize method to test just the supporting methods.
+        return if @options[:unit_test]
+
         @options[:version] = @version
         @options[:log_age] = (@options[:log_age].to_s == 'all') ? 999 : @options[:log_age].to_i
         @options[:scope]   = Hash[@options[:scope].split(',').product([true])]
@@ -25,21 +30,28 @@ module PuppetX
         @pgp_recipient  = 'FD172197'
         @pgp_public_key = pgppublickey
 
+        # Cache lookups about this host.
         @platform = {}
+
+        # Cache package lookups.
         @packages = {}
+
+        # Cache user lookups.
         @users = {}
+
+        # Count the number of appends to each drop file: used to output progress.
         @saves = {}
 
-        inspect_user
-        inspect_platform
-        inspect_output_directory
+        validate_user
+        validate_output_directory
+        validate_output_directory_disk_space
+
+        query_platform
 
         @drop_directory = create_drop_directory
-        verify_drop_directory_disk_space
-
         @log_file = "#{@drop_directory}/log.txt"
 
-        data_drop(JSON.pretty_generate(@options), @drop_directory, 'metadata.json')
+        create_metadata_file
 
         collect_scope_enterprise if @options[:scope]['enterprise']
         collect_scope_etc        if @options[:scope]['etc']
@@ -48,8 +60,8 @@ module PuppetX
         collect_scope_resources  if @options[:scope]['resources']
         collect_scope_system     if @options[:scope]['system']
 
-        @output_archive = create_output_archive
-        report_output_archive
+        @output_archive = create_drop_directory_archive
+        report_summary
       end
 
       #=========================================================================
@@ -68,7 +80,7 @@ module PuppetX
           'pe-puppetserver',
           'pe-razor-server',
           'puppet',
-          'pxp-agent',
+          'pxp-agent'
         ]
       end
 
@@ -79,7 +91,7 @@ module PuppetX
           '/etc/puppetlabs',
           '/opt/puppetlabs',
           '/var/lib/peadmin',
-          '/var/log/puppetlabs',
+          '/var/log/puppetlabs'
         ]
       end
 
@@ -133,7 +145,7 @@ module PuppetX
           'puppetserver/request-logging.xml',
           'pxp-agent/modules',
           'pxp-agent/pxp-agent.conf',
-          'r10k/r10k.yaml',
+          'r10k/r10k.yaml'
         ]
         files.map { |file| "/etc/puppetlabs/#{file}" }
       end
@@ -145,7 +157,7 @@ module PuppetX
           'activemq/activemq.xml',
           'peadmin_mcollective_client.cfg',
           'mcollective/server.cfg',
-          '*/conf.d/*',
+          '*/conf.d/*'
         ]
         files.map { |file| "/etc/puppetlabs/#{file}" }
       end
@@ -161,7 +173,7 @@ module PuppetX
           'os-release',
           'resolv.conf',
           'yum.conf',
-          'yum.repos.d',
+          'yum.repos.d'
         ]
         files.map { |file| "/etc/#{file}" }
       end
@@ -174,7 +186,7 @@ module PuppetX
           'postgresql.conf',
           'postmaster.opts',
           'pg_ident.conf',
-          'pg_hba.conf',
+          'pg_hba.conf'
         ]
         files.map { |file| "#{@paths[:server_data]}/postgresql/9.6/data/#{file}" }
       end
@@ -186,9 +198,33 @@ module PuppetX
         files = [
           'pg_upgrade_internal.log',
           'pg_upgrade_server.log',
-          'pg_upgrade_utility.log',
+          'pg_upgrade_utility.log'
         ]
         files.map { |file| "#{@paths[:server_data]}/postgresql/#{file}" }
+      end
+
+      # Used by validate_output_directory_disk_space.
+
+      def puppet_enterprise_directories_to_size_for_log_age
+        [
+          '/var/log/puppetlabs',
+          '/opt/puppetlabs/pe_metric_curl_cron_jobs',
+          '/opt/puppetlabs/puppet-metrics-collector'
+        ]
+      end
+
+      # Used by validate_output_directory_disk_space.
+      # Instance Variables: @options
+
+      def puppet_enterprise_directories_to_size_for_filesync
+        if @options[:filesync]
+          [
+            '/etc/puppetlabs/code-staging',
+            '/opt/puppetlabs/server/data/puppetserver/filesync'
+          ]
+        else
+          []
+        end
       end
 
       #=========================================================================
@@ -196,7 +232,7 @@ module PuppetX
       #=========================================================================
 
       # Collect Puppet Enterprise diagnostics.
-      # Instance Variables: @drop_directory, @options, @paths, @platform
+      # Instance Variables: @options, @drop_directory, @paths, @platform
 
       def collect_scope_enterprise
         display 'Collecting Enterprise Diagnostics'
@@ -205,7 +241,7 @@ module PuppetX
         scope_directory = "#{@drop_directory}/enterprise"
 
         # Collect Puppet Enterprise packages.
-        pe_packages = package_listing('^pe-|^puppet')
+        pe_packages = query_packages_matching('^pe-|^puppet')
         data_drop(pe_packages, scope_directory, 'puppet_packages.txt')
 
         # Collect list of Puppet Enterprise files.
@@ -241,19 +277,16 @@ module PuppetX
         exec_drop("#{@paths[:puppet_bin]}/puppet module list --color=false",    scope_directory, 'puppet_modules_list.txt')
         exec_drop("#{@paths[:puppet_bin]}/puppet module list --render-as yaml", scope_directory, 'puppet_modules_list.yaml')
 
-        # Collect Puppet Enterprise module changes.
-        pe_module_path = '/opt/puppetlabs/puppet/modules'
-        Dir.foreach(pe_module_path) do |file|
-          next if ['.', '..'].include?(file)
-          pe_module = "#{pe_module_path}/#{file}"
-          next unless File.directory?(pe_module)
-          data_drop("#{pe_module}:", scope_directory, 'puppet_enterprise_module_changes.txt')
-          exec_drop("#{@paths[:puppet_bin]}/puppet module changes #{pe_module} --render-as yaml", scope_directory, 'puppet_enterprise_module_changes.txt')
-        end
-
         # Collect Puppet Enterprise Environment diagnostics.
         environments_json = curl_puppetserver_environments
-        environments = JSON.parse(environments_json)
+
+        begin
+          environments = JSON.parse(environments_json)
+        rescue JSON::ParserError
+          environments = {}
+          logline 'error: collect_scope_enterprise: unable to parse json'
+        end
+
         environments['environments'].keys.each do |environment|
           environment_manifests = environments['environments'][environment]['settings']['manifest']
           environment_directory = File.dirname(environment_manifests)
@@ -274,6 +307,7 @@ module PuppetX
         # Collect Puppet Enterprise Service diagnostics.
         data_drop(curl_console_status,          scope_directory, 'console_status.json')
         data_drop(curl_orchestrator_status,     scope_directory, 'orchestrator_status.json')
+        data_drop(curl_puppetdb_nodes,          scope_directory, 'puppetdb_nodes.json')
         data_drop(curl_puppetdb_status,         scope_directory, 'puppetdb_status.json')
         data_drop(curl_puppetdb_summary_stats,  scope_directory, 'puppetdb_summary_stats.json')
         data_drop(environments_json,            scope_directory, 'puppetserver_environments.json')
@@ -315,7 +349,7 @@ module PuppetX
 
         # Collect Puppet Enterprise FileSync diagnostics.
         code_staging_directory = '/etc/puppetlabs/code-staging'
-        filesync_directory = "#{@paths[:server_data]}/puppetserver/filesync"
+        filesync_directory =     '/opt/puppetlabs/server/data/puppetserver/filesync'
         exec_drop("du -h --max-depth=1 #{code_staging_directory}", scope_directory, 'code_staging_sizes_from_du.txt') if File.directory?(code_staging_directory)
         exec_drop("du -h --max-depth=1 #{filesync_directory}",     scope_directory, 'filesync_sizes_from_du.txt')     if File.directory?(filesync_directory)
         if @options[:filesync]
@@ -332,12 +366,12 @@ module PuppetX
 
         # Collect Puppet Enterprise Metrics.
         recreate_parent_path = false
-        find_drop('/opt/puppetlabs/pe_metric_curl_cron_jobs', @drop_directory, @options[:log_age], recreate_parent_path)
-        find_drop('/opt/puppetlabs/puppet-metrics-collector', @drop_directory, @options[:log_age], recreate_parent_path)
+        copy_drop_mtime('/opt/puppetlabs/pe_metric_curl_cron_jobs', @drop_directory, @options[:log_age], recreate_parent_path)
+        copy_drop_mtime('/opt/puppetlabs/puppet-metrics-collector', @drop_directory, @options[:log_age], recreate_parent_path)
       end
 
       # Collect system configuration files.
-      # Instance Variables: @drop_directory, @options
+      # Instance Variables: @options, @drop_directory
 
       def collect_scope_etc
         display 'Collecting Config Files'
@@ -366,7 +400,6 @@ module PuppetX
         exec_drop('cat /var/lib/peadmin/.mcollective', "#{scope_directory}/mcollective", 'peadmin_mcollective_client.cfg')
 
         # Redact passwords from config files.
-        # Note: This does not fit into an existing *_drop method.
         unless noop?
           puppet_enterprise_config_list_to_redact.each do |file|
             command = %(ls -1 #{@drop_directory}/#{file} 2>/dev/null | xargs --no-run-if-empty sed --in-place '/password/d')
@@ -378,7 +411,7 @@ module PuppetX
       end
 
       # Collect puppet and system logs.
-      # Instance Variables: @drop_directory, @options, @paths
+      # Instance Variables: @options, @drop_directory, @paths
 
       def collect_scope_log
         display 'Collecting Log Files'
@@ -394,7 +427,7 @@ module PuppetX
         copy_drop('/var/log/puppetlabs/installer', @drop_directory)
 
         recreate_parent_path = true
-        find_drop('/var/log/puppetlabs', @drop_directory, @options[:log_age], recreate_parent_path)
+        copy_drop_mtime('/var/log/puppetlabs', @drop_directory, @options[:log_age], recreate_parent_path)
 
         puppet_enterprise_services_list.each do |service|
           exec_drop("journalctl --full --output=short-iso --unit=#{service} --since '#{@options[:log_age]} days ago'", scope_directory, "#{service}-journalctl.log")
@@ -528,27 +561,27 @@ module PuppetX
         end
         display
         return if noop?
-        return false unless exec_return_status(%(mkdir --parents "#{dst}"))
+        return false unless create_path(dst)
         exec_return_status(command_line, timeout)
       end
 
       # Append data to a file in the destination directory.
 
-      def data_drop(data, dst, file)
-        file_name = "#{dst}/#{file}"
-        logline "data_drop: #{dst} to #{file}"
-        if @saves.key?(file_name)
-          @saves[file_name] = @saves[file_name] + 1
-          display " ** Append: #{file} # #{@saves[file_name]}"
+      def data_drop(data, dst, dst_file)
+        dst_file_path = "#{dst}/#{dst_file}"
+        logline "data_drop: to #{dst_file_path}"
+        if @saves.key?(dst_file_path)
+          @saves[dst_file_path] = @saves[dst_file_path] + 1
+          display " ** Append: #{dst_file} # #{@saves[dst_file_path]}"
         else
-          display " ** Saving: #{file}"
-          @saves[file_name] = 1
+          display " ** Saving: #{dst_file}"
+          @saves[dst_file_path] = 1
         end
         display
         return if noop?
-        return false unless exec_return_status(%(mkdir --parents "#{dst}"))
+        return false unless create_path(dst)
         # data = 'This file is empty.' if data == ''
-        File.open(file_name, 'a') { |f| f.puts(data) }
+        File.open(dst_file_path, 'a') { |file| file.puts(data) }
       end
 
       # Copy directories or files to the destination directory, recreating the parent path by default.
@@ -568,25 +601,31 @@ module PuppetX
         display " ** Saving: #{src}"
         display
         return if noop?
-        return false unless exec_return_status(%(mkdir --parents "#{dst}"))
+        return false unless create_path(dst)
         exec_return_status(command_line)
       end
 
-      # Copy files newer than log_age to the destination directory, recreating the parent path by default.
+      # Copy files newer than age to the destination directory, recreating the parent path by default.
 
-      def find_drop(src, dst, log_age, recreate_parent_path = true)
+      def copy_drop_mtime(src, dst, age, recreate_parent_path = true)
         parents_option = recreate_parent_path ? ' --parents' : ''
-        command_line = %(find #{src} -type f -mtime -#{log_age} | xargs --no-run-if-empty cp --preserve #{parents_option} --target-directory #{dst})
+        command_line = %(find #{src} -type f -mtime -#{age} | xargs --no-run-if-empty cp --preserve #{parents_option} --target-directory #{dst})
         unless File.exist?(src)
-          logline "find_drop: source not found: #{src}"
+          logline "copy_drop_mtime: source not found: #{src}"
           return false
         end
-        logline "find_drop: #{command_line}"
-        display " ** Saving: #{src} files newer than #{log_age} days"
+        logline "copy_drop_mtime: #{command_line}"
+        display " ** Saving: #{src} files newer than #{age} days"
         display
         return if noop?
-        return false unless exec_return_status(%(mkdir --parents "#{dst}"))
+        return false unless create_path(dst)
         exec_return_status(command_line)
+      end
+
+      # Create a path.
+
+      def create_path(path)
+        exec_return_status(%(mkdir --parents "#{path}"))
       end
 
       # Create a symlink to allow SOScleaner to redact hostnames in the output.
@@ -603,17 +642,49 @@ module PuppetX
       # Inspection
       #=========================================================================
 
-      # Inspect the runtime user.
+      # Validate the runtime user, or exit.
 
-      def inspect_user
+      def validate_user
         script_name = File.basename(__FILE__)
         command = %(id --user)
-        result = exec_return_result(command)
-        fail_and_exit("#{script_name} must be run as root") unless result == '0'
-        true
+        user_id = exec_return_result(command)
+        fail_and_exit("#{script_name} must be run as root") unless user_id == '0'
       end
 
-      # Inspects the runtime platform.
+      # Validate the output directory, or exit.
+      # Instance Variables: @options
+
+      def validate_output_directory
+        fail_and_exit("Output directory #{@options[:dir]} does not exist") unless File.directory?(@options[:dir])
+        fail_and_exit("Output directory #{@options[:dir]} cannot be a symlink") if File.symlink?(@options[:dir])
+      end
+
+      # Verify free disk space for the output directory, or exit.
+      # Instance Variables: @options
+
+      def validate_output_directory_disk_space
+        available = 0
+        required = 32_768
+        puppet_enterprise_directories_to_size_for_log_age.each do |directory|
+          if File.directory?(directory)
+            used = exec_return_result(%(find #{directory} -type f -mtime -#{@options[:log_age]} -exec du -sk {} \\; | cut -f1 | awk '{total=total+$1}END{print total}').chomp)
+            required += used.to_i unless used == ''
+          end
+        end
+        puppet_enterprise_directories_to_size_for_filesync.each do |directory|
+          if File.directory?(directory)
+            used = exec_return_result(%(du -sk #{directory} | cut -f1).chomp)
+            required += used.to_i unless used == ''
+          end
+        end
+        # Double the total used by source directories, to account for the original output directory and compressed archive.
+        required = (required * 2) / 1024
+        free = exec_return_result(%(df -Pk "#{@options[:dir]}" | grep -v Available).chomp)
+        available = free.split(' ')[3].to_i / 1024 unless free == ''
+        fail_and_exit("Not enough free disk space in #{@options[:dir]}. Available: #{available} MB, Required: #{required} MB") if available < required
+      end
+
+      # Query the runtime platform.
       # Instance Variables: @platform
       #
       # name      : Name of the platorm, e.g. "centos".
@@ -622,7 +693,7 @@ module PuppetX
       # fqdn      : Fully qualified hostname of this machine, e.g. "host.example.com".
       # packaging : Name of packaging system, e.g. "rpm".
 
-      def inspect_platform
+      def query_platform
         os = Facter.value('os')
         @platform[:name]     = os['name'].downcase
         @platform[:release]  = os['release']['major'] + os['release']['minor']
@@ -635,25 +706,15 @@ module PuppetX
           @platform[:packaging] = 'dpkg'
         else
           @platform[:packaging] = ''
-          logline "inspect_platform: unknown packaging system for platform: #{@platform[:name]}"
+          logline "query_platform: unknown packaging system for platform: #{@platform[:name]}"
           display_warning("Unknown packaging system for platform: #{@platform[:name]}")
         end
-        true
       end
 
-      # Inspect the drop directory.
-      # Instance Variables: @options
-
-      def inspect_output_directory
-        fail_and_exit("Output directory #{@options[:dir]} does not exist") unless File.directory?(@options[:dir])
-        fail_and_exit("Output directory #{@options[:dir]} cannot be a symlink") if File.symlink?(@options[:dir])
-        true
-      end
-
-      # Collect all packages that are part of the Puppet Enterprise installation
+      # Query packages that are part of the Puppet Enterprise installation
       # Instance Variables: @platform
 
-      def package_listing(regex)
+      def query_packages_matching(regex)
         result = ''
         acsiibar = '=' * 80
         case @platform[:packaging]
@@ -674,28 +735,28 @@ module PuppetX
             result << "\n#{acsiibar}\n"
           end
         else
-          logline "package_listing: unable to list packages for platform: #{@platform[:name]}"
+          logline "query_packages_matching: unable to list packages for platform: #{@platform[:name]}"
           display_warning("Unable to list packages for platform: #{@platform[:name]}")
         end
         result
       end
 
       # Query a package and cache the results.
-      # Instance Variables: @packages, @platform
+      # Instance Variables: @platform, @packages
 
       def package_installed?(package)
-        result = false
+        status = false
         return @packages[package] if @packages.key?(package)
         case @platform[:packaging]
         when 'rpm'
-          result = exec_return_result(%(rpm --query --info #{package})) =~ %r{Version}
+          status = exec_return_result(%(rpm --query --info #{package})) =~ %r{Version}
         when 'dpkg'
-          result = exec_return_result(%(dpkg-query  --show #{package})) =~ %r{Version}
+          status = exec_return_result(%(dpkg-query  --show #{package})) =~ %r{Version}
         else
           logline "package_installed: unable to query package for platform: #{@platform[:name]}"
           display_warning("Unable to query package for platform: #{@platform[:name]}")
         end
-        @packages[package] = result
+        @packages[package] = status
       end
 
       # Query a user and cache the results.
@@ -713,53 +774,47 @@ module PuppetX
       # Puppet Configuration Settings
       #=========================================================================
 
-      # Puppet[:master]
-
       def conf_puppet_agent_server
-        result = exec_return_result(%(#{@paths[:puppet_bin]}/puppet config print --section agent server))
-        result = 'puppet' if result == ''
-        result
+        setting = exec_return_result(%(#{@paths[:puppet_bin]}/puppet config print --section agent server))
+        setting = 'puppet' if setting == ''
+        setting
       end
-
-      # Puppet[:hostcert]
 
       def conf_puppet_agent_hostcert
-        result = exec_return_result(%(#{@paths[:puppet_bin]}/puppet config print --section agent hostcert))
-        result = exec_return_result(%(/etc/puppetlabs/puppet/ssl/certs/$(hostname -f).pem)) if result == ''
-        result
+        setting = exec_return_result(%(#{@paths[:puppet_bin]}/puppet config print --section agent hostcert))
+        setting = exec_return_result(%(/etc/puppetlabs/puppet/ssl/certs/$(hostname -f).pem)) if setting == ''
+        setting
       end
 
-      # Puppet[:hostprivkey]
-
       def conf_puppet_agent_hostprivkey
-        result = exec_return_result(%(#{@paths[:puppet_bin]}/puppet config print --section agent hostprivkey))
-        result = exec_return_result(%(/etc/puppetlabs/puppet/ssl/private_keys/$(hostname -f).pem)) if result == ''
-        result
+        setting = exec_return_result(%(#{@paths[:puppet_bin]}/puppet config print --section agent hostprivkey))
+        setting = exec_return_result(%(/etc/puppetlabs/puppet/ssl/private_keys/$(hostname -f).pem)) if setting == ''
+        setting
       end
 
       def conf_puppet_master_basemodulepath
-        result = exec_return_result(%(#{@paths[:puppet_bin]}/puppet config print --section master basemodulepath))
-        result = '/etc/puppetlabs/code/modules:/opt/puppetlabs/puppet/modules' if result == ''
-        result
+        setting = exec_return_result(%(#{@paths[:puppet_bin]}/puppet config print --section master basemodulepath))
+        setting = '/etc/puppetlabs/code/modules:/opt/puppetlabs/puppet/modules' if setting == ''
+        setting
       end
 
       def conf_puppet_master_environmentpath
-        result = exec_return_result(%(#{@paths[:puppet_bin]}/puppet config print --section master environmentpath))
-        result = '/etc/puppetlabs/code/environments' if result == ''
-        result
+        setting = exec_return_result(%(#{@paths[:puppet_bin]}/puppet config print --section master environmentpath))
+        setting = '/etc/puppetlabs/code/environments' if setting == ''
+        setting
       end
 
       def conf_puppet_master_modulepath
-        result = exec_return_result(%(#{@paths[:puppet_bin]}/puppet config print --section master modulepath))
-        result = '/etc/puppetlabs/code/environments/production/modules:/etc/puppetlabs/code/modules:/opt/puppetlabs/puppet/modules' if result == ''
-        result
+        setting = exec_return_result(%(#{@paths[:puppet_bin]}/puppet config print --section master modulepath))
+        setting = '/etc/puppetlabs/code/environments/production/modules:/etc/puppetlabs/code/modules:/opt/puppetlabs/puppet/modules' if setting == ''
+        setting
       end
 
       #=========================================================================
       # Query Puppet Enterprise API
       #=========================================================================
 
-      # Common curl parameters.
+      # Common curl parameters used by the curl_* methods.
 
       def curl_auth
         "--cert #{conf_puppet_agent_hostcert} --key #{conf_puppet_agent_hostprivkey}"
@@ -772,54 +827,65 @@ module PuppetX
       # Port 8080 is often used by other services.
 
       def puppetdb_port
-        result = exec_return_result(%(cat /etc/puppetlabs/puppetdb/conf.d/jetty.ini | sed 's/ //g' | grep --extended-regexp '^port=[[:digit:]]+$'))
-        return 8080 if result == ''
-        result.split('=')[1]
+        setting = exec_return_result(%(cat /etc/puppetlabs/puppetdb/conf.d/jetty.ini | sed 's/ //g' | grep --extended-regexp '^port=[[:digit:]]+$'))
+        (setting == '') ? 8080 : setting.split('=')[1]
       end
 
-      # Execute a curl command and return the results.
+      def puppetdb_ssl_port
+        setting = exec_return_result(%(cat /etc/puppetlabs/puppetdb/conf.d/jetty.ini | sed 's/ //g' | grep --extended-regexp '^ssl-port=[[:digit:]]+$'))
+        (setting == '') ? 8081 : setting.split('=')[1]
+      end
+
+      # Execute a curl command and return the results or an empty string.
       # Instance Variables: @paths
 
       def curl_console_status
         return '' unless package_installed?('pe-console-services')
-        result = exec_return_result(%(#{@paths[:puppet_bin]}/curl #{curl_opts} http://127.0.0.1:4432/status/v1/services?level=debug))
-        pretty_json(result)
+        status = exec_return_result(%(#{@paths[:puppet_bin]}/curl #{curl_opts} -X GET http://127.0.0.1:4432/status/v1/services?level=debug))
+        pretty_json(status)
       end
 
       def curl_orchestrator_status
         return '' unless package_installed?('pe-orchestration-services')
-        result = exec_return_result(%(#{@paths[:puppet_bin]}/curl #{curl_opts} --insecure https://127.0.0.1:8143/status/v1/services?level=debug))
-        pretty_json(result)
+        status = exec_return_result(%(#{@paths[:puppet_bin]}/curl #{curl_opts} --insecure -X GET https://127.0.0.1:8143/status/v1/services?level=debug))
+        pretty_json(status)
       end
 
       def curl_puppetserver_status
         return '' unless package_installed?('pe-puppetserver')
-        result = exec_return_result(%(#{@paths[:puppet_bin]}/curl #{curl_opts} --insecure https://127.0.0.1:8140/status/v1/services?level=debug))
-        pretty_json(result)
+        status = exec_return_result(%(#{@paths[:puppet_bin]}/curl #{curl_opts} --insecure -X GET https://127.0.0.1:8140/status/v1/services?level=debug))
+        pretty_json(status)
       end
 
       def curl_puppetdb_status
         return '' unless package_installed?('pe-puppetdb')
-        result = exec_return_result(%(#{@paths[:puppet_bin]}/curl #{curl_opts} -X GET http://127.0.0.1:#{puppetdb_port}/status/v1/services?level=debug))
-        pretty_json(result)
+        status = exec_return_result(%(#{@paths[:puppet_bin]}/curl #{curl_opts} #{curl_auth} --insecure -X GET https://127.0.0.1:#{puppetdb_ssl_port}/status/v1/services?level=debug))
+        pretty_json(status)
       end
 
       def curl_classifier_groups
         return '' unless package_installed?('pe-console-services')
-        result = exec_return_result(%(#{@paths[:puppet_bin]}/curl #{curl_opts} #{curl_auth} --insecure https://127.0.0.1:4433/classifier-api/v1/groups))
-        pretty_json(result)
+        groups = exec_return_result(%(#{@paths[:puppet_bin]}/curl #{curl_opts} #{curl_auth} --insecure -X GET https://127.0.0.1:4433/classifier-api/v1/groups))
+        pretty_json(groups)
+      end
+
+      def curl_puppetdb_nodes
+        return '' unless package_installed?('pe-puppetdb')
+        query = 'query=nodes[certname] {deactivated is null and expired is null}'
+        nodes = exec_return_result(%(#{@paths[:puppet_bin]}/curl #{curl_opts} #{curl_auth} --insecure -X GET https://127.0.0.1:#{puppetdb_ssl_port}/pdb/query/v4 --data-urlencode '#{query}'))
+        pretty_json(nodes)
       end
 
       def curl_puppetdb_summary_stats
         return '' unless package_installed?('pe-puppetdb')
-        result = exec_return_result(%(#{@paths[:puppet_bin]}/curl #{curl_opts} -X GET http://127.0.0.1:8080/pdb/admin/v1/summary-stats))
-        pretty_json(result)
+        status = exec_return_result(%(#{@paths[:puppet_bin]}/curl #{curl_opts} #{curl_auth} --insecure -X GET https://127.0.0.1:#{puppetdb_ssl_port}/pdb/admin/v1/summary-stats))
+        pretty_json(status)
       end
 
       def curl_puppetserver_environments
         return '' unless package_installed?('pe-puppetserver')
-        result = exec_return_result(%(#{@paths[:puppet_bin]}/curl #{curl_opts} #{curl_auth} --insecure https://127.0.0.1:8140/puppet/v3/environments))
-        pretty_json(result)
+        environments = exec_return_result(%(#{@paths[:puppet_bin]}/curl #{curl_opts} #{curl_auth} --insecure -X GET https://127.0.0.1:8140/puppet/v3/environments))
+        pretty_json(environments)
       end
 
       #=========================================================================
@@ -880,14 +946,14 @@ module PuppetX
 
       def psql_replication_slots
         return '' unless package_installed?('pe-puppetdb') && user_exists?('pe-postgres')
-        sql = "SELECT * FROM pg_replication_slots;"
+        sql = 'SELECT * FROM pg_replication_slots;'
         command = %(su - pe-postgres --shell /bin/bash --command "#{@paths[:server_bin]}/psql --dbname pe-puppetdb --command \\"#{sql}\\"")
         exec_return_result(command)
       end
 
       def psql_replication_status
         return '' unless package_installed?('pe-puppetdb') && user_exists?('pe-postgres')
-        sql = "SELECT * FROM pg_stat_replication;"
+        sql = 'SELECT * FROM pg_stat_replication;'
         command = %(su - pe-postgres --shell /bin/bash --command "#{@paths[:server_bin]}/psql --dbname pe-puppetdb --command \\"#{sql}\\"")
         exec_return_result(command)
       end
@@ -908,24 +974,14 @@ module PuppetX
       # Manage Output Directory and Output Archive
       #=========================================================================
 
-      # Avoid interacting with system directories.
-
-      def unsupported_drop_directory?(directory)
-        return true if directory.nil?
-        return true if directory == ''
-        absolute_path = File.realdirpath(directory)
-        return true if ['/', '/boot', '/dev', '/proc', '/run', '/sys'].include?(absolute_path)
-        false
-      end
-
-      # Create the drop directory or exit.
-      # Instance Variables: @drop_directory, @options, @platform
+      # Create the drop directory, or exit.
+      # Instance Variables: @options, @platform
 
       def create_drop_directory
         timestamp = Time.now.strftime('%Y-%m-%d_%s')
         drop_directory = ["#{@options[:dir]}/puppet_enterprise_support", @options[:ticket], @platform[:hostname], timestamp].reject(&:empty?).join('_')
         if unsupported_drop_directory?(drop_directory)
-          fail_and_exit("Unable to create unsupported output directory: #{drop_directory}")
+          fail_and_exit("Unsupported output directory: #{drop_directory}")
         end
         display "Creating output directory: #{drop_directory}"
         display
@@ -935,43 +991,33 @@ module PuppetX
         drop_directory
       end
 
-      # Verify necessary disk space or exit.
-      # Instance Variables: @drop_directory, @options
+      # Create the metadata file.
+      # Instance Variables: @options, @drop_directory
 
-      def verify_drop_directory_disk_space
-        available = 0
-        # Minimum: 32MB plus sources.
-        required = 32_768
-        directories = [
-          '/var/log/puppetlabs',
-          '/opt/puppetlabs/pe_metric_curl_cron_jobs',
-          '/opt/puppetlabs/puppet-metrics-collector',
-        ]
-        if @options[:filesync]
-          directories.push('/etc/puppetlabs/code-staging')
-          directories.push("#{@paths[:server_data]}/puppetserver/filesync")
+      def create_metadata_file
+        begin
+          metadata = JSON.pretty_generate(@options)
+        rescue JSON::GeneratorError
+          metadata = '{}'
+          logline 'error: pretty_json: unable to generate json'
         end
-        directories.each do |directory|
-          if File.directory?(directory)
-            result = exec_return_result(%(du -sk #{directory}))
-            required += result.split(' ')[0].to_i unless result == ''
-          end
-        end
-        # Double the total used by source directories, since copy before archive and compress.
-        required = (required * 2) / 1024
-        result = exec_return_result(%(df -Pk "#{@drop_directory}" | grep -v Available))
-        available = result.split(' ')[3].to_i / 1024 unless result == ''
-        unless available > required
-          exec_return_status(%(rm -rf "#{@drop_directory}"))
-          fail_and_exit("Not enough disk space for #{@drop_directory}. Available: #{available} MB, Required: #{required} MB")
-        end
-        required
+        data_drop(metadata, @drop_directory, 'metadata.json')
+      end
+
+      # Avoid interacting with the following system directories.
+
+      def unsupported_drop_directory?(directory)
+        return true if directory.nil?
+        return true if directory == ''
+        absolute_path = File.realdirpath(directory)
+        return true if ['/', '/boot', '/dev', '/proc', '/run', '/sys'].include?(absolute_path)
+        false
       end
 
       # Archive, compress, and optionally encrypt the drop directory or exit.
-      # Instance Variables: @drop_directory, @options, @pgp_public_key, @pgp_recipient
+      # Instance Variables: @options, @drop_directory, @pgp_public_key, @pgp_recipient
 
-      def create_output_archive
+      def create_drop_directory_archive
         display "Processing output directory: #{@drop_directory}"
         display
         display " ** Archiving output directory: #{@drop_directory}"
@@ -1000,12 +1046,12 @@ module PuppetX
       end
 
       # Delete the drop directory or exit.
-      # Instance Variables: @drop_directory, @options
+      # Instance Variables: @options, @drop_directory
 
       def delete_drop_directory
         return if @options[:z_do_not_delete_drop_directory]
         if unsupported_drop_directory?(@drop_directory)
-          fail_and_exit("Unable to delete unsupported output directory: #{@drop_directory}")
+          fail_and_exit("Unsupported output directory: #{@drop_directory}")
         end
         display "Deleting output directory: #{@drop_directory}"
         display
@@ -1015,7 +1061,7 @@ module PuppetX
       # Summary.
       # Instance Variables: @doc_url, @output_archive
 
-      def report_output_archive
+      def report_summary
         display 'Done!'
         display
         display 'Puppet Enterprise customers ...'
@@ -1045,6 +1091,7 @@ module PuppetX
       # Display an error message.
 
       def display_warning(info = '')
+        # return if @unit_test
         warn info
       end
 
@@ -1059,7 +1106,7 @@ module PuppetX
       # Instance Variables: @log_file
 
       def logline(datum)
-        File.open(@log_file, 'a') { |f| f.puts(datum) }
+        File.open(@log_file, 'a') { |file| file.puts(datum) }
       end
 
       # Execute a command line and return the result or an empty string.
@@ -1115,9 +1162,9 @@ module PuppetX
         command_line = "#{command} #{subcommand} --help"
         result = Facter::Core::Execution.execute(command_line)
         return false unless $?.to_i.zero?
-        return false if result.match(/for help on available puppet subcommands/)
-        return false if result.match(/is not a puppetserver command/)
-        return true
+        return false if result =~ %r{for help on available puppet subcommands}
+        return false if result =~ %r{is not a puppetserver command}
+        true
       end
 
       # Test for noop mode.
@@ -1131,7 +1178,13 @@ module PuppetX
 
       def pretty_json(datum)
         return datum if datum == ''
-        JSON.pretty_generate(JSON.parse(datum))
+        begin
+          JSON.pretty_generate(JSON.parse(datum))
+        rescue JSON::GeneratorError
+          logline 'error: pretty_json: unable to generate json'
+        rescue JSON::ParserError
+          logline 'error: pretty_json: unable to parse json'
+        end
       end
 
       #=========================================================================
@@ -1248,7 +1301,7 @@ if File.expand_path(__FILE__) == File.expand_path($PROGRAM_NAME)
     end
     options[:log_age] = default_log_age
     opts.on('-l', '--log_age DAYS', "Log age (in days) to collect. Defaults to: #{default_log_age}") do |log_age|
-      unless log_age =~ %r{^\d+|all$}
+      unless log_age.to_s =~ %r{^\d+|all$}
         puts "Error: The log-age parameter must be a number, or the string 'all'. Got: #{log_age}"
         exit 1
       end

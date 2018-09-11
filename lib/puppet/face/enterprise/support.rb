@@ -81,7 +81,7 @@ Puppet::Face.define(:enterprise, '1.0.0') do
         exit 1
       end
 
-      if options[:log_age] =~ %r{^\d+|all$}
+      if options[:log_age].to_s =~ %r{^\d+|all$}
         support_script_parameters.push("-l#{options[:log_age]}")
       else
         Puppet.err("The log-age parameter must be a number, or the string 'all'. Got: #{options[:log_age]}")

@@ -1,3 +1,7 @@
+RSpec.configure do |c|
+  c.mock_with :rspec
+end
+
 require 'puppetlabs_spec_helper/module_spec_helper'
 require 'rspec-puppet-facts'
 
@@ -12,11 +16,7 @@ SimpleCov.start do
   formatter SimpleCov::Formatter::MultiFormatter.new(
     [
       SimpleCov::Formatter::HTMLFormatter,
-      SimpleCov::Formatter::Console,
+      SimpleCov::Formatter::Console
     ],
   )
-end
-
-RSpec.configure do |c|
-  c.hiera_config = File.expand_path(File.join(__FILE__, '../fixtures/hiera.yaml'))
 end
