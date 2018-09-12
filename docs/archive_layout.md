@@ -185,12 +185,6 @@
 
   Only collected if the `peadmin` user is present.
 
-- puppet_enterprise_support/enterprise/module_changes.txt
-
-  Contains output from the `puppet module changes <module>`
-  command run for each `<module>` installed in the default
-  environment, usually `production`.
-
 - puppet_enterprise_support/enterprise/modules.txt
 
   Contains output from the `puppet module list` command.
