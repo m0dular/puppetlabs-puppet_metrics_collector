@@ -1160,17 +1160,6 @@ check_r10k() {
   fi
 }
 
-# Gather all changes to the installed Puppet Enterprise modules
-module_changes() {
-  if [ -f "${PUPPET_BIN_DIR?}/puppet" ]; then
-    pe_module_path="/opt/puppetlabs/puppet/modules"
-    for module in $(ls "${pe_module_path?}"); do
-      echo "${module?}:" >> "${DROP?}/enterprise/module_changes.txt"
-      run_diagnostic "${PUPPET_BIN_DIR?}/puppet module changes ${pe_module_path?}/${module?} --render-as yaml" "enterprise/module_changes.txt"
-    done
-  fi
-}
-
 # Print an ASCII bar for readability
 bar() {
   for (( i=0; i<$1; i++ )); do
@@ -1662,7 +1651,6 @@ other_logs
 ifconfig_output
 
 if is_package_installed 'pe-puppetserver'; then
-  module_changes
   check_certificates
   check_r10k
   puppetserver_status
