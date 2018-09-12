@@ -1,6 +1,9 @@
 require 'puppet/indirector/face'
 require 'puppet/feature/base'
 
+require 'open3'
+require 'timeout'
+
 # Primum non nocere
 
 Puppet::Face.define(:enterprise, '1.0.0') do
@@ -51,9 +54,27 @@ Puppet::Face.define(:enterprise, '1.0.0') do
     end
 
     when_invoked do |options|
+      support_module = File.expand_path(File.join(File.dirname(__FILE__), '../../../..'))
+
       if Puppet.features.microsoft_windows?
-        Puppet.err('This command is not implemented for Windows platforms at this time.')
-        exit 1
+        support_script = File.join(support_module, 'lib/puppet_x/puppetlabs/support_script/v1/puppet-enterprise-support.ps1')
+        begin
+          Open3.popen2e('powershell.exe', '-File', support_script) do |_i, oe, t|
+            begin
+              Timeout.timeout(120) do
+                puts oe.readline until oe.eof?
+              end
+            rescue Timeout::Error
+              Process.kill('KILL', t.pid)
+              Puppet.err('The powershell command timed out.')
+              exit 1
+            end
+          end
+        rescue => e
+          Puppet.err("The powershell command returned: #{e.message}")
+          exit 1
+        end
+        exit 0
       end
 
       os_family = `/opt/puppetlabs/puppet/bin/facter os.family`.chomp.strip
@@ -116,7 +137,6 @@ Puppet::Face.define(:enterprise, '1.0.0') do
         Support = PuppetX::Puppetlabs::Support.new(options)
         return
       else
-        support_module = File.expand_path(File.join(File.dirname(__FILE__), '../../../..'))
         support_script = File.join(support_module, 'lib/puppet_x/puppetlabs/support_script/v1/puppet-enterprise-support.sh')
         Kernel.exec('/bin/bash', support_script, *support_script_parameters)
       end
