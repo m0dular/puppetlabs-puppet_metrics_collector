@@ -485,7 +485,7 @@ run_diagnostic() {
 #
 # Returns: String
 #
-function join() { 
+function join() {
   local IFS="$1"
   shift
   echo "$*"
@@ -1385,6 +1385,16 @@ group_member_attr, group_lookup_attr FROM directory_settings) row;"
     run_diagnostic --user pe-postgres "${SERVER_BIN_DIR?}/psql -d pe-rbac -c \"${t_rbac_info_query}\"" "enterprise/rbac_directory_settings.json"
 }
 
+get_psql_replication_slots() {
+    local t_replication_slots_query="SELECT * FROM pg_replication_slots;"
+    run_diagnostic --user pe-postgres "${SERVER_BIN_DIR?}/psql -d pe-puppetdb -c \"${t_replication_slots_query}\"" "enterprise/postgres_replication_slots.txt"
+}
+
+get_psql_replication_status() {
+    local t_replication_status_query="SELECT * FROM pg_stat_replication;"
+    run_diagnostic --user pe-postgres "${SERVER_BIN_DIR?}/psql -d pe-puppetdb -c \"${t_replication_status_query}\"" "enterprise/postgres_replication_status.txt"
+}
+
 # Check for thundering herds
 #
 # This function runs a database query that checks the
@@ -1571,7 +1581,7 @@ case "${PLATFORM_NAME?}" in
 esac
 
 # Verify directory for drop files
-if [ -d "$OUTPUT_DIRECTORY" ]; then 
+if [ -d "$OUTPUT_DIRECTORY" ]; then
   if [ -L "$OUTPUT_DIRECTORY" ]; then
     fail "Output directory $OUTPUT_DIRECTORY cannot be a symlink."
   fi
@@ -1599,7 +1609,7 @@ else
 fi
 
 # Look for at least enough size for the logs, metrics, and 25MB of overhead
-# We multiply by 2 since we make a copy before compressing.  Although the 
+# We multiply by 2 since we make a copy before compressing.  Although the
 # compressed copy should be significantly smaller, there is no way to know
 # the ratio for certain, so we err on the side of caution
 TARGET_SIZE=$((LOGDIR_SIZE + METRICS_SIZE + 25600))
@@ -1674,6 +1684,8 @@ if is_package_installed 'pe-postgresql-server'; then
   db_relation_size_checks
   get_db_settings
   get_rbac_directory_settings_info
+  get_psql_replication_slots
+  get_psql_replication_status
   check_thundering_herd
   db_stat_checks
 fi
