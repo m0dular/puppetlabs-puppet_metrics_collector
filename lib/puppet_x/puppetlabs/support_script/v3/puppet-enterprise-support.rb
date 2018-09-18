@@ -251,7 +251,7 @@ module PuppetX
 
         # Collect Puppet certs.
         if executable_puppet_subcommand?('puppetserver', 'ca')
-          exec_drop("#{@paths[:puppet_bin]}/puppetserver ca list --all", scope_directory, 'puppetserver_cert_list.txt')
+          exec_drop("#{@paths[:puppetlabs_bin]}/puppetserver ca list --all", scope_directory, 'puppetserver_cert_list.txt')
         else
           exec_drop("#{@paths[:puppet_bin]}/puppet cert list --all", scope_directory, 'puppet_cert_list.txt')
         end
