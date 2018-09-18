@@ -1165,8 +1165,8 @@ module PuppetX
         command_line = "#{command} #{subcommand} --help"
         result = Facter::Core::Execution.execute(command_line)
         return false unless $?.to_i.zero?
-        return false if result =~ %r{for help on available puppet subcommands}
-        return false if result =~ %r{is not a puppetserver command}
+        return false if command == 'puppet'       && result =~ %r{for help on available puppet subcommands}
+        return false if command == 'puppetserver' && result =~ %r{is not a puppetserver command}
         true
       end
 
