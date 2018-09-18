@@ -239,6 +239,7 @@ module PuppetX
         data_drop(pe_packages, scope_directory, 'puppet_packages.txt')
 
         # Collect list of Puppet Enterprise files.
+        # Equivalent to list_pe_and_module_files() in puppet-enterprise-support.sh
         pe_directories = puppet_enterprise_directories_list
         pe_directories += conf_puppet_master_basemodulepath.split(':')
         pe_directories += conf_puppet_master_environmentpath.split(':')
@@ -263,7 +264,7 @@ module PuppetX
         exec_drop("#{@paths[:puppet_bin]}/puppet facts --color=false",         scope_directory, 'puppet_facts.txt')
         exec_drop("#{@paths[:puppet_bin]}/puppet facts --color=false --debug", scope_directory, 'puppet_facts_debug.txt')
 
-        # Collect Puppet and Puppetserver gems.
+        # Collect Puppet and Puppet Server gems.
         exec_drop("#{@paths[:puppet_bin]}/gem --list --local",                  scope_directory, 'puppet_gem_list.txt')
         exec_drop("#{@paths[:puppetlabs_bin]}/puppetserver gem --list --local", scope_directory, 'puppetserver_gem_list.txt')
 
@@ -272,17 +273,19 @@ module PuppetX
         exec_drop("#{@paths[:puppet_bin]}/puppet module list --render-as yaml", scope_directory, 'puppet_modules_list.yaml')
 
         # Collect Puppet Enterprise Environment diagnostics.
-        environments_json = curl_puppetserver_environments
+        puppetserver_environments_json = curl_puppetserver_environments
+        data_drop(puppetserver_environments_json, scope_directory, 'puppetserver_environments.json')
 
+        # Collect data using environments from the puppet/v3/environments endpoint.
+        # Equivalent to puppetserver_environments() in puppet-enterprise-support.sh
         begin
-          environments = JSON.parse(environments_json)
+          puppetserver_environments = JSON.parse(puppetserver_environments_json)
         rescue JSON::ParserError
-          environments = {}
-          logline 'error: collect_scope_enterprise: unable to parse json'
+          puppetserver_environments = {}
+          logline 'error: collect_scope_enterprise: unable to parse puppetserver_environments_json'
         end
-
-        environments['environments'].keys.each do |environment|
-          environment_manifests = environments['environments'][environment]['settings']['manifest']
+        puppetserver_environments['environments'].keys.each do |environment|
+          environment_manifests = puppetserver_environments['environments'][environment]['settings']['manifest']
           environment_directory = File.dirname(environment_manifests)
           environment_modules_drop_directory = "#{scope_directory}/environments/#{environment}/modules"
           exec_drop("#{@paths[:puppet_bin]}/puppet module list --color=false --environment=#{environment}",    environment_modules_drop_directory, 'puppet_modules_list.txt')
@@ -303,7 +306,7 @@ module PuppetX
         data_drop(curl_puppetdb_nodes,          scope_directory, 'puppetdb_nodes.json')
         data_drop(curl_puppetdb_status,         scope_directory, 'puppetdb_status.json')
         data_drop(curl_puppetdb_summary_stats,  scope_directory, 'puppetdb_summary_stats.json')
-        data_drop(environments_json,            scope_directory, 'puppetserver_environments.json')
+        data_drop(curl_puppetserver_modules,    scope_directory, 'puppetserver_modules.json')
         data_drop(curl_puppetserver_status,     scope_directory, 'puppetserver_status.json')
 
         # Collect Puppet Enterprise Database diagnostics.
@@ -881,6 +884,12 @@ module PuppetX
         return '' unless package_installed?('pe-puppetserver')
         environments = exec_return_result(%(#{@paths[:puppet_bin]}/curl #{curl_opts} #{curl_auth} --insecure -X GET https://127.0.0.1:8140/puppet/v3/environments))
         pretty_json(environments)
+      end
+
+      def curl_puppetserver_modules
+        return '' unless package_installed?('pe-puppetserver')
+        modules = exec_return_result(%(#{@paths[:puppet_bin]}/curl #{curl_opts} #{curl_auth} --insecure -X GET https://127.0.0.1:8140/puppet/v3/environment_modules))
+        pretty_json(modules)
       end
 
       #=========================================================================
