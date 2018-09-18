@@ -18,7 +18,8 @@ Puppet::Face.define(:enterprise, '1.0.0') do
   action :help do
     default
     summary 'Display help about the enterprise subcommand.'
-    when_invoked do |_args|
+    # rubocop:disable Lint/UnusedBlockArgument
+    when_invoked do |*args|
       Puppet::Face[:help, '0.0.1'].help('enterprise')
     end
   end

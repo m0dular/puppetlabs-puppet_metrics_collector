@@ -10,7 +10,8 @@ Puppet::Face.define(:enterprise, '1.0.0') do
   action :support do
     summary 'Collects Puppet Enterprise Support Diagnostics'
 
-    # See also: lib/puppet_x/puppetlabs/support_script/v2/puppet-enterprise-support.rb
+    # See also: lib/puppet_x/puppetlabs/support_script/v3/puppet-enterprise-support.rb
+
     default_dir     = File.directory?('/var/tmp') ? '/var/tmp' : '/tmp'
     default_log_age = 14
     default_scope   = %w[enterprise etc log networking resources system].join(',')
@@ -49,8 +50,8 @@ Puppet::Face.define(:enterprise, '1.0.0') do
       default_to { '' }
     end
 
-    option '--v2' do
-      summary 'Use Version 2.0 of this command'
+    option '--v3' do
+      summary 'Use Version 3.0 of this command (experimental)'
     end
 
     when_invoked do |options|
@@ -97,8 +98,8 @@ Puppet::Face.define(:enterprise, '1.0.0') do
         support_script_parameters.push('-e')
       end
 
-      if options[:filesync] && options[:v2] != true
-        Puppet.err('The filesync parameter requires the v2 parameter.')
+      if options[:filesync] && options[:v3] != true
+        Puppet.err('The filesync parameter requires the v3 parameter.')
         exit 1
       end
 
@@ -111,8 +112,8 @@ Puppet::Face.define(:enterprise, '1.0.0') do
 
       options_scope = options[:scope].tr(' ', '')
 
-      if options_scope != default_scope && options[:v2] != true
-        Puppet.err('The scope parameter requires the v2 parameter.')
+      if options_scope != default_scope && options[:v3] != true
+        Puppet.err('The scope parameter requires the v3 parameter.')
         exit 1
       end
 
@@ -132,9 +133,10 @@ Puppet::Face.define(:enterprise, '1.0.0') do
         end
       end
 
-      if options[:v2]
-        require 'puppet_x/puppetlabs/support_script/v2/puppet-enterprise-support'
-        Support = PuppetX::Puppetlabs::Support.new(options)
+      if options[:v3]
+        require 'puppet_x/puppetlabs/support_script/v3/puppet-enterprise-support'
+        support = PuppetX::Puppetlabs::Support.new(options)
+        support.run!
         return
       else
         support_script = File.join(support_module, 'lib/puppet_x/puppetlabs/support_script/v1/puppet-enterprise-support.sh')

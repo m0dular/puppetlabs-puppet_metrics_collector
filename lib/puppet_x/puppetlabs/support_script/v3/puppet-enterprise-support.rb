@@ -7,7 +7,7 @@ module PuppetX
     # Collects diagnostic information about Puppet Enterprise for Support.
     class Support
       def initialize(options)
-        @version = '2.0.0'
+        @version = '3.0.0'
         @doc_url = 'https://puppet.com/docs/pe/2018.1/getting_support_for_pe.html#the-pe-support-script'
 
         @paths = {
@@ -18,14 +18,10 @@ module PuppetX
         }
 
         @options = options
-        @unit_test = @options[:unit_test]
-
-        # Disable the initialize method to test just the supporting methods.
-        return if @options[:unit_test]
 
         @options[:version] = @version
-        @options[:log_age] = (@options[:log_age].to_s == 'all') ? 999 : @options[:log_age].to_i
-        @options[:scope]   = Hash[@options[:scope].split(',').product([true])]
+        @options[:log_age] = (options[:log_age].to_s == 'all') ? 999 : options[:log_age].to_i
+        @options[:scope]   = (options[:scope].to_s == '')      ? {}  : Hash[options[:scope].split(',').product([true])]
 
         @pgp_recipient  = 'FD172197'
         @pgp_public_key = pgppublickey
@@ -41,7 +37,9 @@ module PuppetX
 
         # Count the number of appends to each drop file: used to output progress.
         @saves = {}
+      end
 
+      def run!
         validate_user
         validate_output_directory
         validate_output_directory_disk_space
@@ -61,6 +59,7 @@ module PuppetX
         collect_scope_system     if @options[:scope]['system']
 
         @output_archive = create_drop_directory_archive
+
         report_summary
       end
 
@@ -205,7 +204,7 @@ module PuppetX
 
       # Used by validate_output_directory_disk_space.
 
-      def puppet_enterprise_directories_to_size_for_log_age
+      def puppet_enterprise_directories_to_size_by_age
         [
           '/var/log/puppetlabs',
           '/opt/puppetlabs/pe_metric_curl_cron_jobs',
@@ -214,17 +213,12 @@ module PuppetX
       end
 
       # Used by validate_output_directory_disk_space.
-      # Instance Variables: @options
 
       def puppet_enterprise_directories_to_size_for_filesync
-        if @options[:filesync]
-          [
-            '/etc/puppetlabs/code-staging',
-            '/opt/puppetlabs/server/data/puppetserver/filesync'
-          ]
-        else
-          []
-        end
+        [
+          '/etc/puppetlabs/code-staging',
+          '/opt/puppetlabs/server/data/puppetserver/filesync'
+        ]
       end
 
       #=========================================================================
@@ -296,7 +290,6 @@ module PuppetX
           # Scope Redirect: This drops into etc instead of enterprise.
           copy_drop("#{environment_directory}/environment.conf", @drop_directory)
           copy_drop("#{environment_directory}/hiera.yaml",       @drop_directory)
-          copy_drop("#{environment_manifests}/site.pp",          @drop_directory)
         end
 
         # Collect Puppet Enterprise Classifier groups.
@@ -336,7 +329,7 @@ module PuppetX
         data_drop('File descriptors in use by pe-activemq:', scope_directory, 'activemq_resource_limits.txt')
         exec_drop('lsof -u pe-activemq | wc -l',             scope_directory, 'activemq_resource_limits.txt')
         data_drop('Resource limits for pe-activemq:',        scope_directory, 'activemq_resource_limits.txt')
-        exec_drop('ulimit -a',                               scope_directory, 'activemq_resource_limits.txt', 'pe-activemq')
+        exec_drop('ulimit -a',                               scope_directory, 'activemq_resource_limits.txt')
 
         # Collect Puppet Enterprise Mcollective diagnostics.
         if user_exists?('peadmin')
@@ -665,16 +658,18 @@ module PuppetX
       def validate_output_directory_disk_space
         available = 0
         required = 32_768
-        puppet_enterprise_directories_to_size_for_log_age.each do |directory|
+        puppet_enterprise_directories_to_size_by_age.each do |directory|
           if File.directory?(directory)
             used = exec_return_result(%(find #{directory} -type f -mtime -#{@options[:log_age]} -exec du -sk {} \\; | cut -f1 | awk '{total=total+$1}END{print total}').chomp)
             required += used.to_i unless used == ''
           end
         end
-        puppet_enterprise_directories_to_size_for_filesync.each do |directory|
-          if File.directory?(directory)
-            used = exec_return_result(%(du -sk #{directory} | cut -f1).chomp)
-            required += used.to_i unless used == ''
+        if @options[:filesync]
+          puppet_enterprise_directories_to_size_for_filesync.each do |directory|
+            if File.directory?(directory)
+              used = exec_return_result(%(du -sk #{directory} | cut -f1).chomp)
+              required += used.to_i unless used == ''
+            end
           end
         end
         # Double the total used by source directories, to account for the original output directory and compressed archive.
@@ -1091,7 +1086,6 @@ module PuppetX
       # Display an error message.
 
       def display_warning(info = '')
-        # return if @unit_test
         warn info
       end
 
@@ -1340,5 +1334,6 @@ if File.expand_path(__FILE__) == File.expand_path($PROGRAM_NAME)
   end
   parser.parse!
 
-  Support = PuppetX::Puppetlabs::Support.new(options)
+  support = PuppetX::Puppetlabs::Support.new(options)
+  support.run!
 end

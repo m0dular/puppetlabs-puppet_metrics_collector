@@ -1,13 +1,14 @@
 require 'spec_helper'
 
-require 'puppet_x/puppetlabs/support_script/v2/puppet-enterprise-support.rb'
+require 'puppet_x/puppetlabs/support_script/v3/puppet-enterprise-support.rb'
 
 def suppress_standard_output
   allow(STDOUT).to receive(:puts)
 end
 
 describe PuppetX::Puppetlabs::Support do
-  subject(:support_script) { described_class.new(unit_test: true) }
+  options = { log_age: 14, scope: '' }
+  subject(:support_script) { described_class.new(options) }
 
   before(:each) do
     suppress_standard_output
@@ -26,9 +27,8 @@ describe PuppetX::Puppetlabs::Support do
     end
 
     it 'will validate the output_directory disk space' do
-      options = { dir: '/tmp', filesync: true, log_age: 14 }
+      options = { dir: '/tmp', log_age: 14, filesync: true }
       support_script.instance_variable_set(:@options, options)
-
       expect { support_script.validate_output_directory_disk_space }.to_not raise_error
     end
   end
