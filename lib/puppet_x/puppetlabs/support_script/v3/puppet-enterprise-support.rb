@@ -250,7 +250,7 @@ module PuppetX
         end
 
         # Collect Puppet certs.
-        if executable_puppet_subcommand?('puppetserver', 'ca')
+        if SemanticPuppet::Version.parse(Puppet.version) >= SemanticPuppet::Version.parse('6.0.0')
           exec_drop("#{@paths[:puppetlabs_bin]}/puppetserver ca list --all", scope_directory, 'puppetserver_cert_list.txt')
         else
           exec_drop("#{@paths[:puppet_bin]}/puppet cert list --all", scope_directory, 'puppet_cert_list.txt')
@@ -1156,18 +1156,6 @@ module PuppetX
 
       def executable?(command)
         Facter::Core::Execution.which(command)
-      end
-
-      # Test for command subcommand existance.
-
-      def executable_puppet_subcommand?(command, subcommand)
-        return false unless Facter::Core::Execution.which(command)
-        command_line = "#{command} #{subcommand} --help"
-        result = Facter::Core::Execution.execute(command_line)
-        return false unless $?.to_i.zero?
-        return false if command == 'puppet'       && result =~ %r{for help on available puppet subcommands}
-        return false if command == 'puppetserver' && result =~ %r{is not a puppetserver command}
-        true
       end
 
       # Test for noop mode.
