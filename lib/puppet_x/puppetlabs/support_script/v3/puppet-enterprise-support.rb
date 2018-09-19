@@ -328,12 +328,6 @@ module PuppetX
           exec_drop("#{@paths[:puppet_bin]}/r10k deploy display -p --detail -c #{r10k_config}", scope_directory, 'r10k_deploy_display.txt')
         end
 
-        # Collect Puppet Enterprise ActiveMQ diagnostics.
-        data_drop('File descriptors in use by pe-activemq:', scope_directory, 'activemq_resource_limits.txt')
-        exec_drop('lsof -u pe-activemq | wc -l',             scope_directory, 'activemq_resource_limits.txt')
-        data_drop('Resource limits for pe-activemq:',        scope_directory, 'activemq_resource_limits.txt')
-        exec_drop('ulimit -a',                               scope_directory, 'activemq_resource_limits.txt')
-
         # Collect Puppet Enterprise Mcollective diagnostics.
         if user_exists?('peadmin')
           ping_command      = %(- peadmin --shell /bin/bash --command "#{@paths[:puppet_bin]}/mco ping")
@@ -1249,20 +1243,25 @@ end
 if File.expand_path(__FILE__) == File.expand_path($PROGRAM_NAME)
   require 'optparse'
 
-  version = '2.0.0'
-
   # See also: lib/puppet/face/enterprise/support.rb
   default_dir     = File.directory?('/var/tmp') ? '/var/tmp' : '/tmp'
   default_log_age = 14
   default_scope   = %w[enterprise etc log networking resources system].join(',')
 
-  puts "Puppet Enterprise Support Script Version #{version}"
+  puts 'Puppet Enterprise Support Script'
   puts
 
   begin
     require 'facter'
   rescue LoadError
     puts "Error: 'facter' gem is not installed."
+    exit 1
+  end
+
+  begin
+    require 'puppet'
+  rescue LoadError
+    puts "Error: 'puppet' gem is not installed."
     exit 1
   end
 

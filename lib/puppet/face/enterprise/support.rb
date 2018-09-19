@@ -32,16 +32,16 @@ Puppet::Face.define(:enterprise, '1.0.0') do
     end
 
     option '--filesync' do
-      summary 'Include FileSync data. Requires Version 2.0'
+      summary 'Include FileSync data. Requires the --v3 parameter'
     end
 
     option '--log-age DAYS' do
-      summary 'Log age (in days) to collect. Defaults to: 14'
+      summary "Log age (in days) to collect. Defaults to: #{default_log_age}"
       default_to { default_log_age }
     end
 
     option '--scope LIST' do
-      summary "Scope (comma-delimited) of diagnostics to collect. Requires Version 2.0. Defaults to: #{default_scope}"
+      summary "Scope (comma-delimited) of diagnostics to collect. Requires the --v3 parameter. Defaults to: #{default_scope}"
       default_to { default_scope }
     end
 
@@ -99,7 +99,7 @@ Puppet::Face.define(:enterprise, '1.0.0') do
       end
 
       if options[:filesync] && options[:v3] != true
-        Puppet.err('The filesync parameter requires the v3 parameter.')
+        Puppet.err('The filesync parameter requires the --v3 parameter.')
         exit 1
       end
 
@@ -113,7 +113,7 @@ Puppet::Face.define(:enterprise, '1.0.0') do
       options_scope = options[:scope].tr(' ', '')
 
       if options_scope != default_scope && options[:v3] != true
-        Puppet.err('The scope parameter requires the v3 parameter.')
+        Puppet.err('The scope parameter requires the --v3 parameter.')
         exit 1
       end
 
