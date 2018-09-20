@@ -824,6 +824,7 @@ pe_logs() {
   )
 
   pe_services=(
+    'bolt-server'
     'nginx'
     'puppetserver'
     'puppetdb'
@@ -962,6 +963,8 @@ gather_enterprise_files() {
     'activemq/activemq.xml'
     'activemq/jetty.xml'
     'activemq/log4j.properties'
+
+    'bolt-server/conf.d'
 
     'client-tools/orchestrator.conf'
     'client-tools/puppet-access.conf'
