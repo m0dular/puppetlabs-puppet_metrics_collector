@@ -1,3 +1,5 @@
+require 'beaker-pe'
+
 test_name 'PE-15434 - - Install Puppet Enterprise' do
   if hosts_as('compile_master').empty?
     step 'Install PE' do
