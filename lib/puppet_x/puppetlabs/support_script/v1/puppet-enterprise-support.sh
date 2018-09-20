@@ -1224,13 +1224,30 @@ gem_listing() {
   fi
 }
 
+# List certificates issued by the Puppet CA
+#
+# Global Variables Used:
+#   PUPPET_BIN_DIR
+#   SERVER_BIN_DIR
+#
+# Arguments:
+#   None
+#
+# Returns:
+#   None
 check_certificates() {
   local cadir
+  local puppet_version
 
   cadir=$(get_puppet_config "master" "cadir")
+  puppet_version=$("${PUPPET_BIN_DIR?}/puppet" --version)
 
   if [[ -e "${cadir}" ]]; then
-    run_diagnostic "${PUPPET_BIN_DIR?}/puppet cert list --all" "enterprise/certs.txt"
+    if [[ ${puppet_version%%.*} -ge 6 ]];then
+      run_diagnostic "${SERVER_BIN_DIR?}/puppetserver ca list --all" "enterprise/certs.txt"
+    else
+      run_diagnostic "${PUPPET_BIN_DIR}/puppet cert list --all" "enterprise/certs.txt"
+    fi
   fi
 }
 
