@@ -72,6 +72,7 @@ module PuppetX
       def puppet_enterprise_services_list
         [
           'pe-activemq',
+          'pe-bolt-server',
           'pe-console-services',
           'pe-nginx',
           'pe-orchestration-services',
@@ -101,6 +102,7 @@ module PuppetX
           'activemq/activemq.xml',
           'activemq/jetty.xml',
           'activemq/log4j.properties',
+          'bolt-server/conf.d',
           'client-tools/orchestrator.conf',
           'client-tools/puppet-access.conf',
           'client-tools/puppet-code.conf',
