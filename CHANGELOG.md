@@ -1,3 +1,38 @@
+## [Release 2.9.0] - 2018-09-25
+
+### Summary
+
+Feature and bugfix release of the Support Script.
+
+### Features
+
+  - Postgres HA replication status is collected from `pg_replication_slots`
+    and `pg_stat_replication`.
+
+  - Configuration and log files for the PE 2019.0 `pe-bolt-server` service
+    are collected from `/etc/puppetlabs/bolt-server/conf.d` and from
+    `/var/log/puppetlabs/bolt-server`.
+
+  - On PE 2019.0 and newer, the `puppetserver ca` command is used instead
+    of `puppet cert` to list issued certificates.
+
+  - Windows agents now receive a `puppet-enterprise-support.ps1` PowerShell
+    script that performs basic checks of agent services and gathers logs.
+
+  - New Ruby version of the support script that can be selected by passing
+    the `--v3` flag to `puppet enterprise support`. This feature is under
+    development and the regular script should be preferred for production use.
+
+### Bug Fixes
+
+  - Remove the check for `puppet module changes` on modules bundled with PE.
+    This check has terrible performace, is duplicated by the validation output
+    from the pe-modules package, and fails on PE 2019.0 as the required
+    checksums.json files are no longer present.
+
+  - Test suite updates for PE 2019.0 and Puppet 6.
+
+
 ## [Release 2.8.0] - 2018-07-17
 
 ### Summary
@@ -398,6 +433,7 @@ installations, not agents.
   - Console status check timeout has been increased from 5 seconds to 60
     seconds.
 
+[Release 2.9.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/2.8.0...2.9.0
 [Release 2.8.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/2.7.0...2.8.0
 [Release 2.7.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/5d0c9ba...2.7.0
 [Release 1.9.2]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/1.9.1...1.9.2
