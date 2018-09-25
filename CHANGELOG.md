@@ -115,6 +115,19 @@ Major release of the Support Script bundled with PE 2016.5.0.
 
       lib/puppet_x/puppetlabs/support_script/v1/puppet-enterprise-support.sh
 
+## [Release 1.9.2] - 2018-09-25
+
+### Summary
+
+Bugfix release of the Support Script.
+
+### Bug Fixes
+
+  - Remove the check for `puppet module changes` on modules bundled with PE.
+    This check has terrible performace, is duplicated by the validation output
+    from the pe-modules package, and fails on PE 2019.0 as the required
+    checksums.json files are no longer present.
+
 
 ## [Release 1.9.1] - 2018-07-16
 
@@ -387,5 +400,6 @@ installations, not agents.
 
 [Release 2.8.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/2.7.0...2.8.0
 [Release 2.7.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/5d0c9ba...2.7.0
+[Release 1.9.2]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/1.9.1...1.9.2
 [Release 1.9.1]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/1.9.0...1.9.1
 [Release 1.9.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/c01f3b9...1.9.0
