@@ -1,3 +1,17 @@
+## [Release 1.9.2] - 2018-09-25
+
+### Summary
+
+Bugfix release of the Support Script.
+
+### Bug Fixes
+
+  - Remove the check for `puppet module changes` on modules bundled with PE.
+    This check has terrible performace, is duplicated by the validation output
+    from the pe-modules package, and fails on PE 2019.0 as the required
+    checksums.json files are no longer present.
+
+
 ## [Release 1.9.1] - 2018-07-16
 
 ### Summary
@@ -267,5 +281,6 @@ installations, not agents.
   - Console status check timeout has been increased from 5 seconds to 60
     seconds.
 
+[Release 1.9.2]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/1.9.1...1.9.2
 [Release 1.9.1]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/1.9.0...1.9.1
 [Release 1.9.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/c01f3b9...1.9.0
