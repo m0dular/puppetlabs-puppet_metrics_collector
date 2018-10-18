@@ -1127,8 +1127,11 @@ list_pe_and_module_files() {
 # Gather all modules installed on the modulepath
 # Expects enterprise/puppetserver_environments.json to already be in place from puppetserver_environments()
 module_listing() {
-  local agent_cert=$("${PUPPET_BIN_DIR}/puppet" config print --section agent hostcert)
-  local agent_key=$("${PUPPET_BIN_DIR}/puppet" config print --section agent hostprivkey)
+  local agent_cert
+  local agent_key
+
+  agent_cert=$(get_puppet_config "agent" "hostcert")
+  agent_key=$(get_puppet_config "agent" "hostprivkey")
 
   run_diagnostic "${PUPPET_BIN_DIR}/curl --silent --show-error --connect-timeout 5 --max-time 60 -k https://${PLATFORM_HOSTNAME}:8140/puppet/v3/environment_modules --cert ${agent_cert} --key ${agent_key}" "enterprise/modules.json"
 }
@@ -1475,6 +1478,9 @@ puppetdb_status() {
 
 # Curls the classifier groups endpoint
 classifier_data() {
+  local agent_cert
+  local agent_key
+
   if $CLASSIFIER ; then
     agent_cert=$(get_puppet_config "agent" "hostcert")
     agent_key=$(get_puppet_config "agent" "hostprivkey")
