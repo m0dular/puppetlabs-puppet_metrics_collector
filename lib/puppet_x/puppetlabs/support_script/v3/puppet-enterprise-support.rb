@@ -310,11 +310,11 @@ module PuppetX
         data_drop(curl_puppetdb_summary_stats,  scope_directory, 'puppetdb_summary_stats.json')
         data_drop(curl_puppetserver_modules,    scope_directory, 'puppetserver_modules.json')
         data_drop(curl_puppetserver_status,     scope_directory, 'puppetserver_status.json')
+        data_drop(curl_rbac_directory_settings, scope_directory, 'rbac_directory_settings.json')
 
         # Collect Puppet Enterprise Database diagnostics.
         data_drop(psql_settings,                scope_directory, 'postgres_settings.txt')
         data_drop(psql_stat_activity,           scope_directory, 'postgres_stat_activity.txt')
-        data_drop(psql_rbac_directory_settings, scope_directory, 'rbac_directory_settings.txt')
         data_drop(psql_thundering_herd,         scope_directory, 'thundering_herd.txt')
         data_drop(psql_replication_slots,       scope_directory, 'postgres_replication_slots.txt')
         data_drop(psql_replication_status,      scope_directory, 'postgres_replication_status.txt')
@@ -888,6 +888,13 @@ module PuppetX
         pretty_json(modules)
       end
 
+      def curl_rbac_directory_settings
+        return '' unless package_installed?('pe-console-services')
+        settings = exec_return_result(%(#{@paths[:puppet_bin]}/curl #{curl_opts} #{curl_auth} --insecure -X GET https://127.0.0.1:4433/rbac-api/v1/ds))
+        blacklist = ['password', 'ds_pw_obfuscated']
+        pretty_json(settings, blacklist)
+      end
+
       #=========================================================================
       # Query Puppet PostgreSQL
       #=========================================================================
@@ -930,17 +937,6 @@ module PuppetX
         return '' unless package_installed?('pe-puppetdb') && user_exists?('pe-postgres')
         sql = 'SELECT * FROM pg_stat_activity ORDER BY query_start;'
         command = %(su - pe-postgres --shell /bin/bash --command "#{@paths[:server_bin]}/psql --command '#{sql}'")
-        exec_return_result(command)
-      end
-
-      def psql_rbac_directory_settings
-        return '' unless package_installed?('pe-puppetdb') && user_exists?('pe-postgres')
-        sql = 'SELECT row_to_json(row) \
-          FROM ( \
-          SELECT id, display_name, help_link, type, hostname, port, ssl, login, connect_timeout, base_dn, user_rdn, user_display_name_attr, user_email_attr, user_lookup_attr, \
-          group_rdn, group_object_class, group_name_attr, group_member_attr, group_lookup_attr FROM directory_settings \
-          ) row;'
-        command = %(su - pe-postgres --shell /bin/bash --command "#{@paths[:server_bin]}/psql --dbname pe-rbac --command '#{sql}'")
         exec_return_result(command)
       end
 
@@ -1161,16 +1157,33 @@ module PuppetX
         @options[:noop] == true
       end
 
-      # Reformat JSON Pretty.
+      # Pretty Format JSON, minus a list of blacklisted keys.
 
-      def pretty_json(datum)
-        return datum if datum == ''
+      def pretty_json(text, blacklist = [])
+        return text if text == ''
         begin
-          JSON.pretty_generate(JSON.parse(datum))
-        rescue JSON::GeneratorError
-          logline 'error: pretty_json: unable to generate json'
+          json = JSON.parse(text)
         rescue JSON::ParserError
           logline 'error: pretty_json: unable to parse json'
+          return
+        end
+        blacklist.each do |blacklist_key|
+          if json.kind_of?(Array)
+            json.each do |item|
+              if item.kind_of?(Hash)
+                item.delete(blacklist_key) if item.key?(blacklist_key)
+              end
+            end
+          end
+          if json.kind_of?(Hash)
+            json.delete(blacklist_key) if json.key?(blacklist_key)
+          end
+        end
+        begin
+          JSON.pretty_generate(json)
+        rescue JSON::GeneratorError
+          logline 'error: pretty_json: unable to generate json'
+          return
         end
       end
 

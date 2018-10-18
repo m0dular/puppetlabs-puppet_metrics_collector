@@ -31,5 +31,23 @@ describe PuppetX::Puppetlabs::Support do
       support_script.instance_variable_set(:@options, options)
       expect { support_script.validate_output_directory_disk_space }.to_not raise_error
     end
+
+    it 'will blacklist keys in a json hash' do
+      options = { dir: '/tmp', log_age: 14, filesync: true }
+      settings = '{ "username": "public", "password": "private" }'
+      blacklist = ['password']
+      result = support_script.pretty_json(settings, blacklist)
+      expect(result).to include('public')
+      expect(result).not_to include('private')
+    end
+
+    it 'will blacklist keys in an json array of hashes' do
+      options = { dir: '/tmp', log_age: 14, filesync: true }
+      settings = '[{ "username": "public", "password": "private" }]'
+      blacklist = ['password']
+      result = support_script.pretty_json(settings, blacklist)
+      expect(result).to include('public')
+      expect(result).not_to include('private')
+    end
   end
 end
