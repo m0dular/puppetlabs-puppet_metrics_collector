@@ -1420,7 +1420,7 @@ get_rbac_directory_settings_info() {
 
   agent_cert=$(get_puppet_config "agent" "hostcert")
   agent_key=$(get_puppet_config "agent" "hostprivkey")
-  read -r -d '' format_rbac_settings <<'EOF'
+  format_rbac_settings=$(cat <<'EOF'
 require 'json'
 
 raw_input = STDIN.read
@@ -1436,6 +1436,7 @@ blacklist = ['password', 'ds_pw_obfuscated']
 pruned_settings = rbac_settings.reject {|k, v| blacklist.include?(k) }.to_h
 puts JSON.pretty_generate(pruned_settings)
 EOF
+)
 
   run_diagnostic "${PUPPET_BIN_DIR}/curl --silent --show-error --connect-timeout 5 --max-time 60 -k https://127.0.0.1:4433/rbac-api/v1/ds --cert ${agent_cert} --key ${agent_key}|${PUPPET_BIN_DIR}/ruby -e \"${format_rbac_settings}\"" "enterprise/rbac_directory_settings.json"
 }
