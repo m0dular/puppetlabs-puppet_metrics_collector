@@ -1398,14 +1398,46 @@ get_db_settings() {
   run_diagnostic --user pe-postgres "${SERVER_BIN_DIR?}/psql -x -c \"${postgres_settings_query}\"" "enterprise/postgres_settings.txt"
 }
 
+# Fetch Console LDAP integration settings
+#
+# This function querys the pe-console-services API for settings that enable
+# users to be retrieved from LDAP. Passwords and other sensitive info are
+# pruned from the output.
+#
+# Global Variables Used:
+#   DROP
+#   PUPPET_BIN_DIR
+#
+# Arguments:
+#   None
+#
+# Returns:
+#   None
 get_rbac_directory_settings_info() {
-    local t_rbac_info_query="SELECT row_to_json(row) FROM ( SELECT \
-id, display_name, help_link, type, hostname, port, ssl, login, \
-connect_timeout, base_dn, user_rdn, user_display_name_attr, user_email_attr, \
-user_lookup_attr, group_rdn, group_object_class, group_name_attr, \
-group_member_attr, group_lookup_attr FROM directory_settings) row;"
+  local agent_cert
+  local agent_key
+  local format_rbac_settings
 
-    run_diagnostic --user pe-postgres "${SERVER_BIN_DIR?}/psql -d pe-rbac -c \"${t_rbac_info_query}\"" "enterprise/rbac_directory_settings.json"
+  agent_cert=$(get_puppet_config "agent" "hostcert")
+  agent_key=$(get_puppet_config "agent" "hostprivkey")
+  read -r -d '' format_rbac_settings <<'EOF'
+require 'json'
+
+raw_input = STDIN.read
+rbac_settings = begin
+                  JSON.parse(raw_input)
+                rescue JSON::ParserError
+                  puts raw_input
+                  exit 1
+                end
+
+blacklist = ['password', 'ds_pw_obfuscated']
+
+pruned_settings = rbac_settings.reject {|k, v| blacklist.include?(k) }.to_h
+puts JSON.pretty_generate(pruned_settings)
+EOF
+
+  run_diagnostic "${PUPPET_BIN_DIR}/curl --silent --show-error --connect-timeout 5 --max-time 60 -k https://127.0.0.1:4433/rbac-api/v1/ds --cert ${agent_cert} --key ${agent_key}|${PUPPET_BIN_DIR}/ruby -e \"${format_rbac_settings}\"" "enterprise/rbac_directory_settings.json"
 }
 
 get_psql_replication_slots() {
@@ -1698,6 +1730,7 @@ fi
 if is_package_installed 'pe-console-services'; then
   console_status
   classifier_data
+  get_rbac_directory_settings_info
 fi
 
 if is_package_installed 'pe-orchestration-services'; then
@@ -1709,7 +1742,6 @@ if is_package_installed 'pe-postgresql-server'; then
   db_size_checks
   db_relation_size_checks
   get_db_settings
-  get_rbac_directory_settings_info
   get_psql_replication_slots
   get_psql_replication_status
   check_thundering_herd
