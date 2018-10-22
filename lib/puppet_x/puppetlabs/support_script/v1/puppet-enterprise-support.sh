@@ -133,6 +133,102 @@ is_noop() {
   fi
 }
 
+# Normalize PLATFORM_NAME value
+#
+# This function examines PLATFORM_NAME read from places like /etc/os-release
+# or lsb_release and normalizes all variants of a particular platform to a
+# single name for convenience.
+#
+# Arguments:
+# None.
+#
+# Global Variables:
+# PLATFORM_NAME
+#
+# Side-effect:
+# Modifies PLATFORM_NAME
+function sanitize_platform_name() {
+  # Sanitize name for unusual platforms
+  case "${PLATFORM_NAME?}" in
+    redhatenterpriseserver | redhatenterpriseclient | redhatenterpriseas | redhatenterprisees | enterpriseenterpriseserver | redhatenterpriseworkstation | redhatenterprisecomputenode | oracleserver)
+      PLATFORM_NAME=rhel
+      ;;
+    enterprise*)
+      PLATFORM_NAME=centos
+      ;;
+    scientific | scientifics | scientificsl)
+      PLATFORM_NAME=rhel
+      ;;
+    oracle | ol)
+      PLATFORM_NAME=rhel
+      ;;
+    suse* | sles_sap )
+      PLATFORM_NAME=sles
+      ;;
+    amazonami | amzn)
+      PLATFORM_NAME=amazon
+      ;;
+  esac
+}
+
+# Normalize PLATFORM_RELEASE value
+#
+# This function examines PLATFORM_RELEASE read from places like /etc/os-release
+# or lsb_release and normalizes the version number to a value that is
+# convenient to work with.
+#
+# Arguments:
+# None.
+#
+# Global Variables:
+# PLATFORM_NAME
+# PLATFORM_RELEASE
+#
+# Side-effect:
+# Modifies PLATFORM_RELEASE
+function sanitize_platform_release() {
+  # Sanitize release for unusual platforms
+  case "${PLATFORM_NAME?}" in
+    centos | rhel | sles | solaris)
+      # Platform uses only number before period as the release,
+      # e.g. "CentOS 5.5" is release "5"
+      PLATFORM_RELEASE=$(printf "${PLATFORM_RELEASE?}" | cut -d. -f1)
+      ;;
+    amazon)
+      # These lines are to parse: image_version="2017.09"
+      local t_version_year
+      local t_version_month
+
+      t_version_year=$(grep image_version /etc/image-id | cut -d\" -f2 | cut -d. -f1)
+      t_version_month=$(grep image_version /etc/image-id | cut -d\" -f2 | cut -d. -f2)
+
+      if [ -z "$t_version_year" ] || [ -z "$t_version_month" ]; then
+          fail "Unable to parse Amazon Linux version info from /etc/image-id"
+      else
+          # 2017.12 and later is Amazon Linux v2 (platform 7)
+          if [ "$t_version_year" -gt "2017" ]; then
+              PLATFORM_RELEASE=7
+          elif [ "$t_version_year" == "2017" ] && [ "$t_version_month" == "12" ]; then
+              PLATFORM_RELEASE=7
+          else
+              PLATFORM_RELEASE=6
+          fi
+      fi
+      ;;
+    debian)
+      # Platform uses only number before period as the release,
+      # e.g. "Debian 6.0.1" is release "6"
+      PLATFORM_RELEASE=$(printf "${PLATFORM_RELEASE?}" | cut -d. -f1)
+      if [ "${PLATFORM_RELEASE}" = "testing" ] ; then
+          PLATFORM_RELEASE=7
+      fi
+      ;;
+    cumulus)
+      PLATFORM_RELEASE=$(printf "${PLATFORM_RELEASE?}" | cut -d'.' -f'1,2')
+      ;;
+  esac
+}
+
 # Discovers the runtime platform.
 #
 # Arguments:
@@ -155,45 +251,10 @@ detect_platform() {
     t_prepare_platform=`lsb_release -icr 2>&1`
 
     PLATFORM_NAME="$(printf "${t_prepare_platform?}" | grep -E '^Distributor ID:' | cut -s -d: -f2 | sed 's/[[:space:]]//' | tr '[[:upper:]]' '[[:lower:]]')"
-
-    # Sanitize name for unusual platforms
-    case "${PLATFORM_NAME?}" in
-      redhatenterpriseserver | redhatenterpriseclient | redhatenterpriseas | redhatenterprisees | enterpriseenterpriseserver | redhatenterpriseworkstation | redhatenterprisecomputenode | oracleserver)
-        PLATFORM_NAME=rhel
-        ;;
-      enterprise* )
-        PLATFORM_NAME=centos
-        ;;
-      scientific | scientifics | scientificsl )
-        PLATFORM_NAME=rhel
-        ;;
-      suse* )
-        PLATFORM_NAME=sles
-        ;;
-      amazonami )
-        PLATFORM_NAME=amazon
-        ;;
-    esac
-
-    # Release
     PLATFORM_RELEASE="$(printf "${t_prepare_platform?}" | grep -E '^Release:' | cut -s -d: -f2 | sed 's/[[:space:]]//g')"
 
-    # Sanitize release for unusual platforms
-    case "${PLATFORM_NAME?}" in
-      centos | rhel )
-        # Platform uses only number before period as the release,
-        # e.g. "CentOS 5.5" is release "5"
-        PLATFORM_RELEASE="$(printf "${PLATFORM_RELEASE?}" | cut -d. -f1)"
-        ;;
-      debian )
-        # Platform uses only number before period as the release,
-        # e.g. "Debian 6.0.1" is release "6"
-        PLATFORM_RELEASE="$(printf "${PLATFORM_RELEASE?}" | cut -d. -f1)"
-        if [ ${PLATFORM_RELEASE} = "testing" ] ; then
-          PLATFORM_RELEASE=7
-        fi
-        ;;
-    esac
+    sanitize_platform_name
+    sanitize_platform_release
   elif [ "x$(uname -s)" = "xDarwin" ]; then
     PLATFORM_NAME="osx"
     # sw_vers returns something like 10.9.2, but we only want 10.9 so chop off the end
