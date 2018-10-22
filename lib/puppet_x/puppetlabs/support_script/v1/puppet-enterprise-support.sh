@@ -144,6 +144,7 @@ is_noop() {
 #
 # Global Variables:
 # PLATFORM_NAME
+# RELEASE_FILE
 #
 # Side-effect:
 # Modifies PLATFORM_NAME
@@ -169,6 +170,10 @@ function sanitize_platform_name() {
       PLATFORM_NAME=amazon
       ;;
   esac
+
+  if [ -r "${RELEASE_FILE:-}" ] && grep -E "Cumulus Linux" "${RELEASE_FILE}" &> /dev/null; then
+    PLATFORM_NAME=cumulus
+  fi
 }
 
 # Normalize PLATFORM_RELEASE value
@@ -241,13 +246,31 @@ function sanitize_platform_release() {
 # * PLATFORM_HOSTNAME : Fully-Qualified hostname of this machine, e.g. "myhost.mycompany.com".
 # * PLATFORM_HOSTNAME_SHORT : Shortened hostname of this machine, e.g. "myhost".
 # * PLATFORM_PACKAGING : Name of local packaging system, e.g. "dpkg".
+# * RELEASE_FILE: Location of the OS release file used to look up information.
+#                 Either /etc/os-release or /usr/lib/os-release.
 detect_platform() {
   # Default for most platforms. Exceptions are Solaris and AIX defined blow.
   PLATFORM_EGREP='grep -E'
 
-  # First try identifying using lsb_release.  This takes care of Ubuntu
+  # https://www.freedesktop.org/software/systemd/man/os-release.html#Description
+  # Try /etc/os-release first, then /usr/lib/os-release, then legacy pre-systemd methods
+  if [ -f "/etc/os-release" ] || [ -f "/usr/lib/os-release" ]; then
+    if [ -f "/etc/os-release" ]; then
+        RELEASE_FILE="/etc/os-release"
+    else
+        RELEASE_FILE="/usr/lib/os-release"
+    fi
+
+    # shellcheck source=/dev/null
+    PLATFORM_NAME=$(source "${RELEASE_FILE}"; printf '%s' "${ID}")
+    # shellcheck source=/dev/null
+    PLATFORM_RELEASE=$(source "${RELEASE_FILE}"; printf '%s' "${VERSION_ID}")
+
+    sanitize_platform_name
+    sanitize_platform_release
+  # Try identifying using lsb_release.  This takes care of Ubuntu
   # (lsb-release is part of ubuntu-minimal).
-  if cmd lsb_release; then
+  elif cmd lsb_release; then
     t_prepare_platform=`lsb_release -icr 2>&1`
 
     PLATFORM_NAME="$(printf "${t_prepare_platform?}" | grep -E '^Distributor ID:' | cut -s -d: -f2 | sed 's/[[:space:]]//' | tr '[[:upper:]]' '[[:lower:]]')"
@@ -401,6 +424,7 @@ detect_platform() {
   readonly PLATFORM_HOSTNAME
   readonly PLATFORM_HOSTNAME_SHORT
   readonly PLATFORM_PACKAGING
+  readonly RELEASE_FILE
 }
 
 # Is the package installed? Returns 0 for true, 1 for false.
