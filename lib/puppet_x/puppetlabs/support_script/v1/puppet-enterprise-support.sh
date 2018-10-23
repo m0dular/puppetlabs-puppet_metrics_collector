@@ -1213,7 +1213,7 @@ list_pe_and_module_files() {
   done
   enterprise_dirs="${enterprise_dirs} ${paths}"
   for dir in ${enterprise_dirs}; do
-    dir_desc=$(echo "${dir}" | sed 's,\/,_,g')
+    dir_desc="${dir//\//_}"
     if [ -d "${dir}" ]; then
       find "${dir}" -ls | gzip -f9 > "${DROP?}/enterprise/find/${dir_desc}.txt.gz"
     else
