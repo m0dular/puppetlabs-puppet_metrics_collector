@@ -91,7 +91,7 @@ xfhzX6eZ+xft
 # Arguments:
 # 1. Text to display.
 display() {
-  printf "%s\n" "${1?}"
+  printf '%s\n' "${1?}"
 }
 
 # Display a newline
@@ -468,7 +468,7 @@ get_ini_field() {
   t_ini_field="${2?}"
 
   t_extract_field="
-      field_regex = /^\s*${t_ini_field?}\s*=(.*)$/
+      field_regex = /^\\s*${t_ini_field?}\\s*=(.*)$/
       if match = File.read('${t_ini_file?}').match(field_regex)
           print match[1].strip
       end
@@ -1270,7 +1270,7 @@ bar() {
     printf "="
   done
 
-  printf "\n"
+  printf '\n'
 }
 
 # Gather all packages that are part of the Puppet Enterprise installation
@@ -1281,16 +1281,16 @@ package_listing() {
     rpm)
       run_diagnostic "rpm -qa | $PLATFORM_EGREP '^pe-|^puppet'" $pkg_file
       for pkg in $(rpm -qa | $PLATFORM_EGREP '^pe-|^puppet'); do
-        printf "\n%s\n" "$pkg" >> "$pkg_verify_file"
+        printf '\n%s\n' "$pkg" >> "$pkg_verify_file"
         bar ${#pkg} >> "$pkg_verify_file"
         rpm -V "$pkg" >> "$pkg_verify_file" || true
       done
     ;;
 
     dpkg)
-      run_diagnostic "dpkg-query -W -f '\${Package}\n' | $PLATFORM_EGREP '^pe-|^puppet'" $pkg_file
+      run_diagnostic "dpkg-query -W -f '\${Package}\\n' | $PLATFORM_EGREP '^pe-|^puppet'" $pkg_file
       for pkg in $(dpkg-query -W -f '${Package}\n' | $PLATFORM_EGREP '^pe-|^puppet'); do
-        printf "\n%s\n" "$pkg" >> "$pkg_verify_file"
+        printf '\n%s\n' "$pkg" >> "$pkg_verify_file"
         bar ${#pkg} >> "$pkg_verify_file"
         dpkg -V "$pkg" >> "$pkg_verify_file" || true
       done
@@ -1375,7 +1375,7 @@ activemq_limits() {
     echo "lsof: command not found" >> "${DROP}/enterprise/activemq_resource_limits"
   fi
 
-  echo -e "\n\nResource limits for pe-activemq:\n" >> "${DROP}/enterprise/activemq_resource_limits"
+  printf '\n\nResource limits for pe-activemq:\n' >> "${DROP}/enterprise/activemq_resource_limits"
   run_diagnostic --user pe-activemq "ulimit -a" "enterprise/activemq_resource_limits"
 }
 
@@ -1873,7 +1873,7 @@ if [[ "${ENCRYPT_OUTPUT}" == 'true' ]]; then
 
   echo "${PUPPET_PUBKEY}" | "${GPG_CMD}" --import --homedir "${DROP}"/gpg
 
-  "${GPG_CMD}" --trust-model always --homedir "${DROP}"/gpg --recipient FD172197 --encrypt  "${support_archive}" || printf "Unable to gpg encrypt the file.\n"
+  "${GPG_CMD}" --trust-model always --homedir "${DROP}"/gpg --recipient FD172197 --encrypt  "${support_archive}" || printf 'Unable to gpg encrypt the file.\n'
 
   rm "${support_archive}"
 
