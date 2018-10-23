@@ -443,7 +443,7 @@ is_package_installed() {
       return $?
       ;;
     pkgadd)
-      (pkginfo -l ${1?} | ${PLATFORM_EGREP?} 'STATUS:[:space:]*.*[:space:]*installed') &> /dev/null
+      (pkginfo -l "${1?}" | ${PLATFORM_EGREP?} 'STATUS:[:space:]*.*[:space:]*installed') &> /dev/null
       return $?
       ;;
     ips)
@@ -555,10 +555,10 @@ run_diagnostic() {
   if is_noop; then
     return 0
   elif [[ -n "${user}" ]]; then
-    ( eval "${prefix_command:-}su - ${user} -s ${SHELL} -c \"${t_run_diagnostic__command//\"/\\\"}\" 2>&1" ) >> $t_run_diagnostic__outfile
+    ( eval "${prefix_command:-}su - ${user} -s ${SHELL} -c \"${t_run_diagnostic__command//\"/\\\"}\" 2>&1" ) >> "${t_run_diagnostic__outfile}"
     return $?
   else
-    ( eval "${prefix_command:-}${t_run_diagnostic__command?} 2>&1" ) >> $t_run_diagnostic__outfile
+    ( eval "${prefix_command:-}${t_run_diagnostic__command?} 2>&1" ) >> "${t_run_diagnostic__outfile}"
     return $?
   fi
 }
@@ -745,7 +745,7 @@ db_size_checks() {
 
   for db in $database_names; do
     # Find size via psql
-    db_size_from_psql $db
+    db_size_from_psql "${db}"
   done
   # Find size via filesystem
   db_size_from_fs
@@ -1209,7 +1209,7 @@ list_pe_and_module_files() {
 
   # Remove directories under directories in $enterprise_dirs so the listings aren't duplicated
   for dir in ${enterprise_dirs}; do
-    paths=$(echo $paths | sed "s,${dir}/[^ ]*,,g")
+    paths=$(printf '%s' "${paths}" | sed "s,${dir}/[^ ]*,,g")
   done
   enterprise_dirs="${enterprise_dirs} ${paths}"
   for dir in ${enterprise_dirs}; do
