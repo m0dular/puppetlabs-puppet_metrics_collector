@@ -1202,9 +1202,9 @@ list_pe_and_module_files() {
   local environmentpath
   local paths
 
-  modulepath=$(${PUPPET_BIN_DIR?}/puppet master --configprint modulepath)
-  basemodulepath=$(${PUPPET_BIN_DIR?}/puppet master --configprint basemodulepath)
-  environmentpath=$(${PUPPET_BIN_DIR?}/puppet master --configprint environmentpath)
+  modulepath=$(get_puppet_config master modulepath)
+  basemodulepath=$(get_puppet_config master basemodulepath)
+  environmentpath=$(get_puppet_config master environmentpath)
   paths=$(printf '%s' "${modulepath}:${basemodulepath}:${environmentpath}" | tr '[:\n]' '\0' | xargs -0)
 
   # Remove directories under directories in $enterprise_dirs so the listings aren't duplicated
