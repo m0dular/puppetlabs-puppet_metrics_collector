@@ -666,14 +666,16 @@ hostname_checks() {
 }
 
 can_contact_master() {
-  if cmd puppet && [ -f "${PUPPET_BIN_DIR?}/puppet" ]; then
+  if cmd ping && cmd puppet && [ -f "${PUPPET_BIN_DIR?}/puppet" ]; then
+    local ping_args
+
     if [ "x${PLATFORM_NAME?}" = "xsolaris" ]; then
-      PING="ping"
+      ping_args=()
     else
-      PING="ping -c 1"
+      ping_args=('-c' '1')
     fi
 
-    if $PING $(${PUPPET_BIN_DIR?}/puppet agent --configprint server) &> /dev/null; then
+    if ping "${ping_args[@]}" "$(get_puppet_config agent server)" &> /dev/null; then
       echo "Master is alive." > "${DROP?}/networking/puppet_ping.txt"
     else
       echo "Master is unreachable." > "${DROP}/networking/puppet_ping.txt"
@@ -692,7 +694,7 @@ ifconfig_output() {
 #===[Resource checks]===========================================================
 
 get_all_database_names() {
-  echo $(su - pe-postgres -s ${SHELL} -c "${SERVER_BIN_DIR?}/psql -t -c 'select datname from pg_catalog.pg_database;'" | awk '{print $1}' | grep -v '^template')
+  printf '%s' "$(su - pe-postgres -s "${SHELL}" -c "${SERVER_BIN_DIR?}/psql -t -c 'select datname from pg_catalog.pg_database;'" | awk '{print $1}' | grep -v '^template')"
 }
 
 df_checks() {
