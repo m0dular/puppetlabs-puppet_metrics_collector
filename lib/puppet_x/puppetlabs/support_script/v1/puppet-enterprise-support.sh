@@ -697,13 +697,13 @@ get_all_database_names() {
 
 df_checks() {
   # Conditionally do some disk use checks
-  if $(df -h &> /dev/null); then
+  if df -h &>/dev/null; then
     run_diagnostic "df -h" "resources/df_output.txt"
-  elif $(df -k &> /dev/null); then
+  elif df -k &>/dev/null; then
     run_diagnostic "df -k" "resources/df_output.txt"
   fi
 
-  if $(df -i &> /dev/null); then
+  if df -i &>/dev/null; then
     run_diagnostic "df -i" "resources/df_inodes_output.txt"
   fi
 }
@@ -840,7 +840,7 @@ os_checks() {
 
 ps_checks() {
   run_diagnostic "ps aux" "system/ps_aux.txt"
-  $(ps -e f &> /dev/null) && run_diagnostic "ps -e f" "system/ps_tree.txt"
+  ps -e f &>/dev/null && run_diagnostic "ps -e f" "system/ps_tree.txt"
 }
 
 list_all_services() {
