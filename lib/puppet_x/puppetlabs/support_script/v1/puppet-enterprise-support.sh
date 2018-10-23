@@ -712,7 +712,9 @@ df_checks() {
 
 db_relation_size_checks() {
   # Inspired by https://wiki.postgresql.org/wiki/Disk_Usage#Finding_the_size_of_your_biggest_relations
-  local database_names=$(get_all_database_names)
+  local database_names
+  database_names=$(get_all_database_names)
+
   for db in $database_names; do
     local command="${SERVER_BIN_DIR?}/psql $db -c \
 \"SELECT '$db' as dbname, nspname || '.' || relname AS relation, \
@@ -738,7 +740,9 @@ db_size_from_fs() {
 db_size_checks() {
   # Check size of databases, both from the filesystem's perspective and the
   # database's perspective
-  local database_names=$(get_all_database_names)
+  local database_names
+  database_names=$(get_all_database_names)
+
   for db in $database_names; do
     # Find size via psql
     db_size_from_psql $db
@@ -1193,10 +1197,16 @@ gather_enterprise_files() {
 # Display listings of the Puppet Enterprise files and module files
 list_pe_and_module_files() {
   local enterprise_dirs="/etc/puppetlabs /opt/puppetlabs /var/lib/peadmin /var/log/puppetlabs"
-  local modulepath=$(${PUPPET_BIN_DIR?}/puppet master --configprint modulepath)
-  local basemodulepath=$(${PUPPET_BIN_DIR?}/puppet master --configprint basemodulepath)
-  local environmentpath=$(${PUPPET_BIN_DIR?}/puppet master --configprint environmentpath)
-  local paths=$(echo "${modulepath}:${basemodulepath}:${environmentpath}" | tr '[:\n]' '\0' | xargs -0)
+  local modulepath
+  local basemodulepath
+  local environmentpath
+  local paths
+
+  modulepath=$(${PUPPET_BIN_DIR?}/puppet master --configprint modulepath)
+  basemodulepath=$(${PUPPET_BIN_DIR?}/puppet master --configprint basemodulepath)
+  environmentpath=$(${PUPPET_BIN_DIR?}/puppet master --configprint environmentpath)
+  paths=$(printf '%s' "${modulepath}:${basemodulepath}:${environmentpath}" | tr '[:\n]' '\0' | xargs -0)
+
   # Remove directories under directories in $enterprise_dirs so the listings aren't duplicated
   for dir in ${enterprise_dirs}; do
     paths=$(echo $paths | sed "s,${dir}/[^ ]*,,g")
