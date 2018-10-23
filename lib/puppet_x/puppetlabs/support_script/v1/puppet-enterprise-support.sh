@@ -197,7 +197,7 @@ function sanitize_platform_release() {
     centos | rhel | sles | solaris)
       # Platform uses only number before period as the release,
       # e.g. "CentOS 5.5" is release "5"
-      PLATFORM_RELEASE=$(printf "${PLATFORM_RELEASE?}" | cut -d. -f1)
+      PLATFORM_RELEASE=$(printf '%s' "${PLATFORM_RELEASE?}" | cut -d. -f1)
       ;;
     amazon)
       # These lines are to parse: image_version="2017.09"
@@ -223,13 +223,13 @@ function sanitize_platform_release() {
     debian)
       # Platform uses only number before period as the release,
       # e.g. "Debian 6.0.1" is release "6"
-      PLATFORM_RELEASE=$(printf "${PLATFORM_RELEASE?}" | cut -d. -f1)
+      PLATFORM_RELEASE=$(printf '%s' "${PLATFORM_RELEASE?}" | cut -d. -f1)
       if [ "${PLATFORM_RELEASE}" = "testing" ] ; then
           PLATFORM_RELEASE=7
       fi
       ;;
     cumulus)
-      PLATFORM_RELEASE=$(printf "${PLATFORM_RELEASE?}" | cut -d'.' -f'1,2')
+      PLATFORM_RELEASE=$(printf '%s' "${PLATFORM_RELEASE?}" | cut -d'.' -f'1,2')
       ;;
   esac
 }
@@ -249,6 +249,7 @@ function sanitize_platform_release() {
 # * RELEASE_FILE: Location of the OS release file used to look up information.
 #                 Either /etc/os-release or /usr/lib/os-release.
 detect_platform() {
+  local t_platform_release
   # Default for most platforms. Exceptions are Solaris and AIX defined blow.
   PLATFORM_EGREP='grep -E'
 
@@ -271,10 +272,11 @@ detect_platform() {
   # Try identifying using lsb_release.  This takes care of Ubuntu
   # (lsb-release is part of ubuntu-minimal).
   elif cmd lsb_release; then
-    t_prepare_platform=`lsb_release -icr 2>&1`
+    local t_prepare_platform
+    t_prepare_platform=$(lsb_release -icr 2>&1)
 
-    PLATFORM_NAME="$(printf "${t_prepare_platform?}" | grep -E '^Distributor ID:' | cut -s -d: -f2 | sed 's/[[:space:]]//' | tr '[[:upper:]]' '[[:lower:]]')"
-    PLATFORM_RELEASE="$(printf "${t_prepare_platform?}" | grep -E '^Release:' | cut -s -d: -f2 | sed 's/[[:space:]]//g')"
+    PLATFORM_NAME="$(printf '%s' "${t_prepare_platform?}" | grep -E '^Distributor ID:' | cut -s -d: -f2 | sed 's/[[:space:]]//' | tr '[:upper:]' '[:lower:]')"
+    PLATFORM_RELEASE="$(printf '%s' "${t_prepare_platform?}" | grep -E '^Release:' | cut -s -d: -f2 | sed 's/[[:space:]]//g')"
 
     sanitize_platform_name
     sanitize_platform_release
@@ -297,7 +299,7 @@ detect_platform() {
     PLATFORM_EGREP='egrep'
 
   # Test for RHEL variant. RHEL, CentOS, OEL
-  elif [ -f /etc/redhat-release -a -r /etc/redhat-release -a -s /etc/redhat-release ]; then
+  elif [ -f /etc/redhat-release ] && [ -r /etc/redhat-release ] && [ -s /etc/redhat-release ]; then
     # Oracle Enterprise Linux 5.3 and higher identify the same as RHEL
     if grep -qi 'red hat enterprise' /etc/redhat-release; then
       PLATFORM_NAME=rhel
@@ -311,29 +313,28 @@ detect_platform() {
     # Release - take first digits after ' release ' only.
     PLATFORM_RELEASE="$(sed 's/.*\ release\ \([[:digit:]]\+\).*/\1/g;q' /etc/redhat-release)"
   # Test for Cumulus releases
-  elif [ -r "/etc/os-release" ] && grep -E "Cumulus Linux" "/etc/os-release" &> /dev/null ; then
+  elif [ -r "/etc/os-release" ] && grep -qE "Cumulus Linux" "/etc/os-release"; then
     PLATFORM_NAME=cumulus
-    PLATFORM_RELEASE=`grep -E "VERSION_ID" "/etc/os-release" | cut -d'=' -f2 | cut -d'.' -f'1,2'`
+    PLATFORM_RELEASE=$(grep -E "VERSION_ID" "/etc/os-release" | cut -d'=' -f2 | cut -d'.' -f'1,2')
   # Test for Debian releases
-  elif [ -f /etc/debian_version -a -r /etc/debian_version -a -s /etc/debian_version ]; then
-    t_prepare_platform__debian_version_file="/etc/debian_version"
-    t_prepare_platform__debian_version=`cat /etc/debian_version`
+  elif [ -f /etc/debian_version ] && [ -r /etc/debian_version ] && [ -s /etc/debian_version ]; then
+    local t_prepare_platform__debian_version
+    t_prepare_platform__debian_version=$(cat /etc/debian_version)
 
-    if cat "${t_prepare_platform__debian_version_file?}" | grep -E '^[[:digit:]]' > /dev/null; then
+    if grep -qE '^[[:digit:]]' /etc/debian_version; then
       PLATFORM_NAME=debian
-      PLATFORM_RELEASE="$(printf "${t_prepare_platform__debian_version?}" | sed 's/\..*//')"
-    elif cat "${t_prepare_platform__debian_version_file?}" | grep -E '^wheezy' > /dev/null; then
+      PLATFORM_RELEASE="$(printf '%s' "${t_prepare_platform__debian_version?}" | sed 's/\..*//')"
+    elif grep -qE '^wheezy' /etc/debian_version; then
       PLATFORM_NAME=debian
       PLATFORM_RELEASE="7"
     fi
-  elif [ -f /etc/SuSE-release -a -r /etc/SuSE-release ]; then
-    t_prepare_platform__suse_version=`cat /etc/SuSE-release`
+  elif [ -f /etc/SuSE-release ] && [ -r /etc/SuSE-release ]; then
+    local t_prepare_platform__suse_version
+    t_prepare_platform__suse_version=$(cat /etc/SuSE-release)
 
-    if printf "${t_prepare_platform__suse_version?}" | grep -E 'Enterprise Server'; then
+    if printf '%s' "${t_prepare_platform__suse_version?}" | grep -qE 'Enterprise Server'; then
       PLATFORM_NAME=sles
-      t_version=`/bin/cat /etc/SuSE-release | grep VERSION | sed 's/^VERSION = \(\d*\)/\1/' `
-      t_patchlevel=`cat /etc/SuSE-release | grep PATCHLEVEL | sed 's/^PATCHLEVEL = \(\d*\)/\1/' `
-      PLATFORM_RELEASE="${t_version}"
+      PLATFORM_RELEASE=$(grep VERSION /etc/SuSE-release | sed 's/^VERSION = \(\d*\)/\1/')
     fi
   elif [ -f /etc/system-release ]; then
     if grep -qi 'amazon linux' /etc/system-release; then
@@ -346,7 +347,7 @@ detect_platform() {
     fail "$(uname -s) is not a supported platform for Puppet Enterprise."
   fi
 
-  if [ -z "${PLATFORM_NAME:-""}" -o -z "${PLATFORM_RELEASE:-""}" ]; then
+  if [ -z "${PLATFORM_NAME:-""}" ] || [ -z "${PLATFORM_RELEASE:-""}" ]; then
     fail "Unknown platform."
   fi
 
@@ -356,9 +357,9 @@ detect_platform() {
       # Calling hostname --fqdn on solaris will set the hostname to '--fqdn' so we don't do that.
       # Note there is a single space and literal tab character inside the brackets to match spaces or tabs
       # in resolv.conf
-      t_fqdn=`sed -n 's/^[ 	]*domain[ 	]*\(.*\)$/\1/p' /etc/resolv.conf`
-      t_host=`uname -n`
-      if [ -z $t_fqdn ]; then
+      t_fqdn=$(sed -n 's/^[ 	]*domain[ 	]*\(.*\)$/\1/p' /etc/resolv.conf)
+      t_host=$(uname -n)
+      if [ -z "${t_fqdn}" ]; then
         PLATFORM_HOSTNAME=${t_host?}
       else
         PLATFORM_HOSTNAME="${t_host?}.${t_fqdn:-''}"
@@ -373,20 +374,20 @@ detect_platform() {
       # which `hostname` prints the fqdn, and `hostname -s` prints
       # hostname with domain info trimmed. We use the AIX hostname
       # because its more sane and reliably there.
-      PLATFORM_HOSTNAME=`/bin/hostname`
-      PLATFORM_HOSTNAME_SHORT=`/bin/hostname -s`
+      PLATFORM_HOSTNAME=$(/bin/hostname)
+      PLATFORM_HOSTNAME_SHORT=$(/bin/hostname -s)
       ;;
     *)
       if hostname --fqdn &> /dev/null; then
-        PLATFORM_HOSTNAME=`hostname --fqdn 2> /dev/null`
+        PLATFORM_HOSTNAME=$(hostname --fqdn 2> /dev/null)
       else
-        PLATFORM_HOSTNAME=`hostname`
+        PLATFORM_HOSTNAME=$(hostname)
       fi
 
       if hostname --short &> /dev/null; then
-        PLATFORM_HOSTNAME_SHORT=`hostname --short 2> /dev/null`
+        PLATFORM_HOSTNAME_SHORT=$(hostname --short 2> /dev/null)
       else
-        PLATFORM_HOSTNAME_SHORT=`echo "${PLATFORM_HOSTNAME}" | cut -d. -f1`
+        PLATFORM_HOSTNAME_SHORT=$(printf '%s' "${PLATFORM_HOSTNAME}" | cut -d. -f1)
       fi
       ;;
   esac
@@ -415,7 +416,7 @@ detect_platform() {
   esac
 
   # Ensure PLATFORM_HOSTNAME_SHORT only contains one namespace segment.
-  PLATFORM_HOSTNAME_SHORT=$(echo "${PLATFORM_HOSTNAME_SHORT}" | cut -d. -f1)
+  PLATFORM_HOSTNAME_SHORT=$(printf '%s' "${PLATFORM_HOSTNAME_SHORT}" | cut -d. -f1)
 
   # Now that global variables are set, flag them as readonly.
   readonly PLATFORM_NAME
