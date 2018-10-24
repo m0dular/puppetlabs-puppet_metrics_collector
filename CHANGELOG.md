@@ -150,6 +150,20 @@ Major release of the Support Script bundled with PE 2016.5.0.
 
       lib/puppet_x/puppetlabs/support_script/v1/puppet-enterprise-support.sh
 
+
+## [Release 1.9.3] - 2018-10-24
+
+### Summary
+
+Bugfix release of the Support Script.
+
+### Bug Fixes
+
+  - The `--log-age` flag is used to limit the age of metrics data collected
+    from /opt/puppetlabs. This further reduces the size of support script
+    archives by only collecting 14 days worth of metrics data.
+
+
 ## [Release 1.9.2] - 2018-09-25
 
 ### Summary
@@ -433,9 +447,11 @@ installations, not agents.
   - Console status check timeout has been increased from 5 seconds to 60
     seconds.
 
+
 [Release 2.9.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/2.8.0...2.9.0
 [Release 2.8.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/2.7.0...2.8.0
 [Release 2.7.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/5d0c9ba...2.7.0
+[Release 1.9.3]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/1.9.2...1.9.3
 [Release 1.9.2]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/1.9.1...1.9.2
 [Release 1.9.1]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/1.9.0...1.9.1
 [Release 1.9.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/c01f3b9...1.9.0
