@@ -891,7 +891,7 @@ pe_logs() {
 # Returns:
 #   None
 pe_metrics() {
-  local metrics_directory
+  local metrics_directory=''
   local find_filter=()
 
   if [[ $MAX_LOG_AGE != *[!0-9]* ]];then
