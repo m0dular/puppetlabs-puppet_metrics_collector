@@ -1,3 +1,16 @@
+## [Release 1.9.3] - 2018-10-24
+
+### Summary
+
+Bugfix release of the Support Script.
+
+### Bug Fixes
+
+  - The `--log-age` flag is used to limit the age of metrics data collected
+    from /opt/puppetlabs. This further reduces the size of support script
+    archives by only collecting 14 days worth of metrics data.
+
+
 ## [Release 1.9.2] - 2018-09-25
 
 ### Summary
@@ -281,6 +294,7 @@ installations, not agents.
   - Console status check timeout has been increased from 5 seconds to 60
     seconds.
 
+[Release 1.9.2]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/1.9.2...1.9.3
 [Release 1.9.2]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/1.9.1...1.9.2
 [Release 1.9.1]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/1.9.0...1.9.1
 [Release 1.9.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/c01f3b9...1.9.0
