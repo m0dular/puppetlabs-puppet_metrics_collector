@@ -1,3 +1,27 @@
+## [Release 2.9.1] - 2018-10-24
+
+### Summary
+
+Bugfix release of the Support Script.
+
+### Bug Fixes
+
+  - The `--log-age` flag is used to limit the age of metrics data collected
+    from /opt/puppetlabs. This further reduces the size of support script
+    archives by only collecting 14 days worth of metrics data.
+
+  - The support script now consults `/etc/os-release` when detecting the
+    which OS it is executing on before falling back to the `lsb_release`
+    command or platform specific release files.
+
+  - LDAP connection settings are collected directly from console-services.
+    Previously, these were selected from the database, which required the
+    script to be run on the DB node of a split install.
+
+  - The script no longer calls `puppet master --configprint` to discover
+    modulepath as this command has been removed from PE 2019.0.
+
+
 ## [Release 2.9.0] - 2018-09-25
 
 ### Summary
@@ -459,6 +483,7 @@ installations, not agents.
     seconds.
 
 
+[Release 2.9.1]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/2.9.0...2.9.1
 [Release 2.9.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/2.8.0...2.9.0
 [Release 2.8.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/2.7.0...2.8.0
 [Release 2.7.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/5d0c9ba...2.7.0
