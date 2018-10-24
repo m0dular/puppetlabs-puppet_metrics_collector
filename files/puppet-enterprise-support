@@ -891,12 +891,31 @@ pe_logs() {
 # Returns:
 #   None
 pe_metrics() {
+  local metrics_directory
+  local find_filter=()
+
+  if [[ $MAX_LOG_AGE != *[!0-9]* ]];then
+    find_filter=('-mtime' "-${MAX_LOG_AGE}")
+  fi
+
   if [[ -d /opt/puppetlabs/puppet-metrics-collector ]]; then
-    mkdir -p "${DROP?}/metrics"
-    cp -LpR /opt/puppetlabs/puppet-metrics-collector "${DROP}/metrics/"
+    metrics_directory=/opt/puppetlabs/puppet-metrics-collector
   elif [[ -d /opt/puppetlabs/pe_metric_curl_cron_jobs ]]; then
-    mkdir -p "${DROP?}/metrics"
-    cp -LpR /opt/puppetlabs/pe_metric_curl_cron_jobs "${DROP}/metrics/"
+    metrics_directory=/opt/puppetlabs/puppet-metrics-collector
+  fi
+
+  if [[ -n $metrics_directory ]]; then
+    (
+      cd "${metrics_directory}" || exit 1
+
+      while IFS= read -r -d $'\0' metricfile; do
+        metricfile="${metricfile#./}"
+        targetdir="${DROP?}/metrics/${metricfile%/*}"
+
+        [[ -d $targetdir ]] || mkdir -p "${targetdir}"
+        cp -Lp "${metricfile}" "${targetdir}/"
+      done < <(find . -type f "${find_filter[@]}" -exec printf '%s\0' {} \;)
+    )
   fi
 }
 
