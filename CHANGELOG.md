@@ -294,7 +294,7 @@ installations, not agents.
   - Console status check timeout has been increased from 5 seconds to 60
     seconds.
 
-[Release 1.9.2]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/1.9.2...1.9.3
+[Release 1.9.3]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/1.9.2...1.9.3
 [Release 1.9.2]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/1.9.1...1.9.2
 [Release 1.9.1]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/1.9.0...1.9.1
 [Release 1.9.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/c01f3b9...1.9.0
