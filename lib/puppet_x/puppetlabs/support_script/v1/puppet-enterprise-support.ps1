@@ -51,7 +51,8 @@ Function Test-CommandExists {
 # Support Script Variables
 ################################################################################
 
-$run_date_time = [string](Get-Date -Format yyyy-MM-dd-hh-mm)
+$run_date_time = (Get-Date -Format 'yyyyMMddHHmmss')
+$hostname = $env:computername.ToLower()
 $time_zone = [System.TimeZone]::CurrentTimeZone
 $eventlog_date = (Get-Date).AddDays(-$logAge)
 
@@ -75,9 +76,9 @@ if (Test-CommandExists ('facter.bat')) {
   $puppet_mcollective_logdir = ''
 }
 
-$output_directory = $puppet_logdir    + '/' + $run_date_time
+$output_directory = $puppet_logdir    + '/puppet_enterprise_support_' + $hostname + '_' + $run_date_time
 $output_file      = $output_directory + '/support_script.log'
-$output_archive   = $puppet_logdir    + '/' + $run_date_time + '.zip'
+$output_archive   = $puppet_logdir    + '/puppet_enterprise_support_' + $hostname + '_' + $run_date_time + '.zip'
 
 ################################################################################
 # PowerShell Variables
