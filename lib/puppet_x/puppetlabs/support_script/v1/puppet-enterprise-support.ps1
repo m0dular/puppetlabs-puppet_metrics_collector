@@ -6,9 +6,11 @@ Param (
   [int]$logAge = 7
  )
 
+$script_version = '2.9.1'
+
 ################################################################################
 Write-Host
-Write-Host 'Puppet Enterprise Windows Support Script'
+Write-Host ('Puppet Enterprise Windows Support Script v' + $script_version)
 Write-Host
 ################################################################################
 
@@ -91,6 +93,8 @@ $global:progressPreference = 'SilentlyContinue'
 ################################################################################
 
 $(New-Item -Path $output_directory -ItemType directory) | Out-Null
+
+@{version = $script_version; timestamp = $run_date_time; osfamily = 'windows'} | ConvertTo-Json | Out-File -FilePath ($output_directory + '/metadata.json')
 
 if (! (Test-Path $output_directory)) {
   Write-Host 'Error: could not create output directory:'
