@@ -974,7 +974,7 @@ module PuppetX
       # Instance Variables: @options, @platform
 
       def create_drop_directory
-        timestamp = Time.now.strftime('%Y-%m-%d_%s')
+        timestamp = Time.now.strftime('%Y%m%d%H%M%S')
         drop_directory = ["#{@options[:dir]}/puppet_enterprise_support", @options[:ticket], @platform[:hostname], timestamp].reject(&:empty?).join('_')
         if unsupported_drop_directory?(drop_directory)
           fail_and_exit("Unsupported output directory: #{drop_directory}")
