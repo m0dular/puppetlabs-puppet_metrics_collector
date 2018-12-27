@@ -3,12 +3,14 @@
 ################################################################################
 
 Param (
-  [int]$logAge = 7
+  [int]$logAge = 14
  )
+
+$script_version = '2.9.1'
 
 ################################################################################
 Write-Host
-Write-Host 'Puppet Enterprise Windows Support Script'
+Write-Host ('Puppet Enterprise Windows Support Script v' + $script_version)
 Write-Host
 ################################################################################
 
@@ -51,7 +53,8 @@ Function Test-CommandExists {
 # Support Script Variables
 ################################################################################
 
-$run_date_time = [string](Get-Date -Format yyyy-MM-dd-hh-mm)
+$run_date_time = (Get-Date -Format 'yyyyMMddHHmmss')
+$hostname = $env:computername.ToLower()
 $time_zone = [System.TimeZone]::CurrentTimeZone
 $eventlog_date = (Get-Date).AddDays(-$logAge)
 
@@ -75,9 +78,9 @@ if (Test-CommandExists ('facter.bat')) {
   $puppet_mcollective_logdir = ''
 }
 
-$output_directory = $puppet_logdir    + '/' + $run_date_time
+$output_directory = $puppet_logdir    + '/puppet_enterprise_support_' + $hostname + '_' + $run_date_time
 $output_file      = $output_directory + '/support_script.log'
-$output_archive   = $puppet_logdir    + '/' + $run_date_time + '.zip'
+$output_archive   = $puppet_logdir    + '/puppet_enterprise_support_' + $hostname + '_' + $run_date_time + '.zip'
 
 ################################################################################
 # PowerShell Variables
@@ -90,6 +93,8 @@ $global:progressPreference = 'SilentlyContinue'
 ################################################################################
 
 $(New-Item -Path $output_directory -ItemType directory) | Out-Null
+
+@{version = $script_version; timestamp = $run_date_time; osfamily = 'windows'} | ConvertTo-Json | Out-File -FilePath ($output_directory + '/metadata.json')
 
 if (! (Test-Path $output_directory)) {
   Write-Host 'Error: could not create output directory:'
