@@ -176,8 +176,15 @@ Get-WmiObject -Query "SELECT * FROM win32_service where (name = 'puppet' or name
 Write-Host 'Exporting Puppet Agent Services Event Logs ...'
 ################################################################################
 
-Get-Eventlog -Source puppet    -LogName Application -After $eventlog_date 2> ($output_directory + '/eventlog_application_puppet_errors.txt')    | Format-List Index, Time, EntryType, Message | Out-File -Append -FilePath ($output_directory + '/eventlog_application_puppet.txt')
-Get-Eventlog -Source pxp-agent -LogName Application -After $eventlog_date 2> ($output_directory + '/eventlog_application_pxp-agent_errors.txt') | Format-List Index, Time, EntryType, Message | Out-File -Append -FilePath ($output_directory + '/eventlog_application_pxp-agent.txt')
+# NOTE: This can be replaced with Get-WinEvent once Server 2008
+#       is no longer supported. This will improve efficieny and
+#       allow access to more event fields, such as process ID.
+Get-Eventlog -Source puppet -LogName Application -After $eventlog_date 2> ($output_directory + '/eventlog_application_puppet_errors.txt')    | `
+  Select-Object -Property @{label='TimeGenerated';expression={$_.TimeGenerated.ToString("o")}},Index,EntryType,Message| `
+  Export-Csv -NoTypeInformation -Path ($output_directory + '/eventlog_application_puppet.csv')
+Get-Eventlog -Source pxp-agent -LogName Application -After $eventlog_date 2> ($output_directory + '/eventlog_application_pxp-agent_errors.txt') | `
+  Select-Object -Property @{label='TimeGenerated';expression={$_.TimeGenerated.ToString("o")}},Index,EntryType,Message| `
+  Export-Csv -NoTypeInformation -Path ($output_directory + '/eventlog_application_pxp-agent.csv')
 
 ################################################################################
 Write-Host 'Copying Puppet Agent Services Configuration Files and State Directory ...'
