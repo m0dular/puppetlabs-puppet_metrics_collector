@@ -75,19 +75,18 @@ an overview of the files included in support script output.
 
 ## Limitations
 
-The `puppet enterprise support` command is intended to aid in the
+The `puppet enterprise support` command was developed to aid the
 troubleshooting of PE infrastructure nodes --- MoMs, databases, consoles,
 compile masters, MCollective hubs and spokes, etc. Therefore, this module
-only supports OS versions listed as "Puppet master platforms" for a
+only supports Linux OS versions listed as "Puppet master platforms" for a
 given PE release.
-
-For example, the list of Master Platforms for the 2016.4 LTS series is at:
-
-https://puppet.com/docs/pe/2016.4/sys_req_os.html#puppet-master-platforms
 
 The list for the 2018.1 LTS series is at:
 
 https://puppet.com/docs/pe/2018.1/supported_operating_systems.html#puppet-master-platforms
+
+Support for troubleshooting Windows agents was added in v2.9.0 of the support
+script which first shipped with PE 2018.1.5 and 2019.0.0.
 
 ## Development
 
@@ -127,8 +126,8 @@ Keep in mind the following guidelines when developing the support script:
 
   - Structure your development work to produce a single commit per logical
     change. For example: if you extend an existing diagnostic, add a new
-    diagnostic, and perform some stylistic cleanup; each of those changes
-    should be a single, separate commit.
+    diagnostic, and perform some stylistic cleanup, then each of those changes
+    should be a separate commit.
 
   - Development should be done against the LTS branch of the support script
     unless functionality is being added that is only useful for newer PE
@@ -163,7 +162,7 @@ Then, execute the test helper under the `ext/` directory:
 The wrapper defaults to testing against the latest LTS nightly build.
 Other PE builds can be tested by passing an X.Y version number to the helper:
 
-    ./ext/run_acceptance_tests.sh 2017.2
+    ./ext/run_acceptance_tests.sh 2019.1
 
 The helper will launch parallel tests for every PE configuration described
 by files in the tests/beaker/configs/ directory. Tests can take over ten

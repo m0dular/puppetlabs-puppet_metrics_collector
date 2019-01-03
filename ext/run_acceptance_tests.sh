@@ -7,26 +7,16 @@
 # release series by passing an X.Y version number
 # as an argument:
 #
-#     ./ext/run_acceptance_tests.sh 2017.1
+#     ./ext/run_acceptance_tests.sh 2019.1
 
-PE_TEST_SERIES=${1-"2017.3"}
+PE_TEST_SERIES=${1-"2018.1"}
 
-if (( $(bc <<< "${PE_TEST_SERIES} > 2017.3") )); then
-  TEST_MATRIX=('centos6-64mdca'
-               'centos7-64mdca'
-               'sles12-64mdca'
-               'ubuntu1604-64mdca'
-               'ubuntu1804-64mdca'
-               'centos7-64am-64ad-64ac-64compile_master.af')
-else
-  TEST_MATRIX=('centos6-64mdca'
-               'centos7-64mdca'
-               'sles11-64mdca'
-               'sles12-64mdca'
-               'ubuntu1404-64mdca'
-               'ubuntu1604-64mdca'
-               'centos7-64am-64ad-64ac-64compile_master.af')
-fi
+TEST_MATRIX=('centos6-64mdca'
+             'centos7-64mdca'
+             'sles12-64mdca'
+             'ubuntu1604-64mdca'
+             'ubuntu1804-64mdca'
+             'centos7-64am-64ad-64ac-64compile_master.af')
 
 LATEST_GOOD_BUILD=$(curl -q "http://getpe.delivery.puppetlabs.net/latest/${PE_TEST_SERIES}")
 echo "Testing build: ${LATEST_GOOD_BUILD?}"
