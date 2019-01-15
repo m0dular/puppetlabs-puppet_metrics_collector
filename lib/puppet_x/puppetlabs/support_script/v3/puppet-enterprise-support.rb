@@ -360,6 +360,10 @@ module PuppetX
         recreate_parent_path = false
         copy_drop_mtime('/opt/puppetlabs/pe_metric_curl_cron_jobs', @drop_directory, @options[:log_age], recreate_parent_path)
         copy_drop_mtime('/opt/puppetlabs/puppet-metrics-collector', @drop_directory, @options[:log_age], recreate_parent_path)
+
+        # Collect all Orchestrator logs for the number of active nodes.
+        recreate_parent_path = true
+        copy_drop_match('/var/log/puppetlabs/orchestration-services', @drop_directory, 'aggregate-node-count*.log*', recreate_parent_path)
       end
 
       # Collect system configuration files.
@@ -608,6 +612,23 @@ module PuppetX
         end
         logline "copy_drop_mtime: #{command_line}"
         display " ** Saving: #{src} files newer than #{age} days"
+        display
+        return if noop?
+        return false unless create_path(dst)
+        exec_return_status(command_line)
+      end
+
+      # Copy files with names matching a glob to the destination directory, recreating the parent path by default.
+
+      def copy_drop_match(src, dst, glob, recreate_parent_path = true)
+        parents_option = recreate_parent_path ? ' --parents' : ''
+        command_line = %(find #{src} -type f -name #{glob} | xargs --no-run-if-empty cp --preserve #{parents_option} --target-directory #{dst})
+        unless File.exist?(src)
+          logline "copy_drop_match: source not found: #{src}"
+          return false
+        end
+        logline "copy_drop_match: #{command_line}"
+        display " ** Saving: #{src} files with a name matching '#{glob}'"
         display
         return if noop?
         return false unless create_path(dst)
