@@ -1446,7 +1446,6 @@ orchestration_inventory() {
 # Returns:
 #   None
 orchestration_node_count() {
-  /var/log/puppetlabs/orchestration-services/
   if [[ -d '/var/log/puppetlabs/orchestration-services/' ]]; then
     mkdir -p "${DROP}/logs/orchestration-services"
     cp -LpR /var/log/puppetlabs/orchestration-services/aggregate-node-count*.log* "${DROP}/logs/orchestration-services"
