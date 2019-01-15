@@ -1434,6 +1434,25 @@ orchestration_inventory() {
   fi
 }
 
+# Collects a full set of Orchestrator logs for the number of active nodes
+#
+# Global Variables Used:
+#   PUPPET_BIN_DIR
+#   HOME
+#
+# Arguments:
+#   None
+#
+# Returns:
+#   None
+orchestration_node_count() {
+  /var/log/puppetlabs/orchestration-services/
+  if [[ -d '/var/log/puppetlabs/orchestration-services/' ]]; then
+    mkdir -p "${DROP}/logs/orchestration-services"
+    cp -LpR /var/log/puppetlabs/orchestration-services/aggregate-node-count*.log* "${DROP}/logs/orchestration-services"
+  fi
+}
+
 # Collects output from the Puppet Server status endpoint
 #
 # Global Variables Used:
@@ -1854,6 +1873,7 @@ fi
 if is_package_installed 'pe-orchestration-services'; then
   orchestration_status
   orchestration_inventory
+  orchestration_node_count
 fi
 
 if is_package_installed 'pe-postgresql-server'; then
