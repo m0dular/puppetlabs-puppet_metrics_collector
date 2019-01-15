@@ -1450,7 +1450,7 @@ orchestration_node_count() {
     mkdir -p "${DROP}/logs/orchestration-services"
     find /var/log/puppetlabs/orchestration-services -type f \
       -name 'aggregate-node-count*.log*' \
-      -exec cp -LpR '{}' "${DROP}/logs/orchestration-services/" \;
+      -exec cp -Lp '{}' "${DROP}/logs/orchestration-services/" \;
   fi
 }
 
