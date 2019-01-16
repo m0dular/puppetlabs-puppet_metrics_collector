@@ -1,3 +1,23 @@
+## [Release 2.10.0] - 2019-01-15
+
+### Summary
+
+Feature and bugfix release of the Support Script.
+
+### Features
+
+  - The support script now gathers node activity counts from the
+    PE Orchestration Service.
+
+  - Windows event logs are now captured in CSV format and include
+    timestamps.
+
+### Bug Fixes
+
+  - The output archives of the PowerShell and Ruby support scripts
+    now match the naming convention used by the Bash script.
+
+
 ## [Release 2.9.1] - 2018-10-24
 
 ### Summary
@@ -483,6 +503,7 @@ installations, not agents.
     seconds.
 
 
+[Release 2.10.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/2.9.1...2.10.0
 [Release 2.9.1]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/2.9.0...2.9.1
 [Release 2.9.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/2.8.0...2.9.0
 [Release 2.8.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/2.7.0...2.8.0
