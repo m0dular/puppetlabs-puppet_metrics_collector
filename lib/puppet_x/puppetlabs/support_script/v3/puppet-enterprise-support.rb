@@ -1,6 +1,7 @@
 #!/opt/puppetlabs/puppet/bin/ruby
 
 require 'json'
+require 'tempfile'
 
 module PuppetX
   module Puppetlabs
@@ -23,8 +24,12 @@ module PuppetX
         @options[:log_age] = (options[:log_age].to_s == 'all') ? 999 : options[:log_age].to_i
         @options[:scope]   = (options[:scope].to_s == '')      ? {}  : Hash[options[:scope].split(',').product([true])]
 
-        @pgp_recipient  = 'FD172197'
-        @pgp_public_key = pgppublickey
+        @pgp_recipient = 'FD172197'
+
+        # NOTICE: customer-support.puppetlabs.net does not resolve to support-sftp-pix-prod-1.it.puppet.net internaly.
+        # CHANGE: support-sftp-pix-prod-1.it.puppet.net TO customer-support.puppetlabs.net before merging.
+        @sftp_server = 'support-sftp-pix-prod-1.it.puppet.net'
+        @sftp_url    = "puppet.enterprise.support@#{@sftp_server}:/drop/"
 
         # Cache lookups about this host.
         @platform = {}
@@ -59,6 +64,8 @@ module PuppetX
         collect_scope_system     if @options[:scope]['system']
 
         @output_archive = create_drop_directory_archive
+
+        optionally_upload_to_puppet_support
 
         report_summary
       end
@@ -912,7 +919,7 @@ module PuppetX
       def curl_rbac_directory_settings
         return '' unless package_installed?('pe-console-services')
         settings = exec_return_result(%(#{@paths[:puppet_bin]}/curl #{curl_opts} #{curl_auth} --insecure -X GET https://127.0.0.1:4433/rbac-api/v1/ds))
-        blacklist = ['password', 'ds_pw_obfuscated']
+        blacklist = %w[password ds_pw_obfuscated]
         pretty_json(settings, blacklist)
       end
 
@@ -1032,7 +1039,7 @@ module PuppetX
       end
 
       # Archive, compress, and optionally encrypt the drop directory or exit.
-      # Instance Variables: @options, @drop_directory, @pgp_public_key, @pgp_recipient
+      # Instance Variables: @options, @drop_directory, @pgp_recipient
 
       def create_drop_directory_archive
         display "Processing output directory: #{@drop_directory}"
@@ -1054,7 +1061,7 @@ module PuppetX
           display
           exec_or_fail(%(mkdir "#{@drop_directory}/gpg"))
           exec_or_fail(%(chmod 600 "#{@drop_directory}/gpg"))
-          exec_or_fail(%(echo "#{@pgp_public_key}" | "#{gpg_command}" --quiet --import --homedir "#{@drop_directory}/gpg"))
+          exec_or_fail(%(echo "#{pgp_public_key}" | "#{gpg_command}" --quiet --import --homedir "#{@drop_directory}/gpg"))
           exec_or_fail(%(#{gpg_command} --quiet --homedir "#{@drop_directory}/gpg" --trust-model always --recipient #{@pgp_recipient} --encrypt "#{output_archive}"))
           exec_or_fail(%(rm -f "#{output_archive}"))
           output_archive = "#{output_archive}.gpg"
@@ -1075,6 +1082,59 @@ module PuppetX
         exec_or_fail(%(rm -rf "#{@drop_directory}"))
       end
 
+      # Optionally upload the archive file to Puppet Support.
+      # Instance Variables: @options, @sftp_url, @output_archive
+
+      def optionally_upload_to_puppet_support
+        return unless @options[:upload]
+        display "Uploading: #{@output_archive} via SFTP"
+        display
+        unless executable?('sftp')
+          display ' ** Unable to upload archive file: sftp command unavailable'
+          display
+          return
+        end
+        begin
+          ssh_key_file = Tempfile.new('pes.ky')
+          ssh_key_file.write(sftp_ssh_key)
+          ssh_key_file.close
+          if @options[:trust]
+            ssh_known_hosts_file = Tempfile.new('csp.ky')
+            ssh_known_hosts_file.write(sftp_ssh_known_hosts)
+            ssh_known_hosts_file.close
+            ssh_known_hosts = "-o UserKnownHostsFile=#{ssh_known_hosts_file.path}"
+          else
+            ssh_known_hosts = ''
+          end
+          # https://stribika.github.io/2015/01/04/secure-secure-shell.html
+          # ssh_ciphers        = 'Ciphers=chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr'
+          # ssh_kex_algorithms = 'KexAlgorithms=curve25519-sha256@libssh.org,diffie-hellman-group-exchange-sha256'
+          # ssh_macs           = 'MACs=hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-512,hmac-sha2-256,umac-128@openssh.com'
+          ssh_ciphers        = 'Ciphers=aes256-ctr,aes192-ctr,aes128-ctr'
+          ssh_kex_algorithms = 'KexAlgorithms=diffie-hellman-group-exchange-sha256'
+          ssh_macs           = 'MACs=hmac-sha2-512,hmac-sha2-256'
+          ssh_options = %(-o "#{ssh_ciphers}" -o "#{ssh_kex_algorithms}" -o "#{ssh_macs}" -o "Protocol=2" -o "ConnectTimeout=16" -o "IdentityFile=#{ssh_key_file.path}" #{ssh_known_hosts} -o "BatchMode=yes")
+          command = %(sftp #{ssh_options} #{@sftp_url} <<< $'put #{@output_archive}' 2>&1)
+          sftp_output = Facter::Core::Execution.execute(command)
+          unless $?.to_i.zero?
+            ssh_key_file.unlink
+            ssh_known_hosts_file.unlink if @options[:trust]
+            display ' ** Unable to upload the output archive file. SFTP Output:'
+            display
+            display sftp_output
+            display
+            display '    Please manualy upload the output archive file to Puppet Support.'
+            display
+          end
+        rescue Facter::Core::Execution::ExecutionFailure => e
+          ssh_key_file.unlink
+          ssh_known_hosts_file.unlink if @options[:trust]
+          display " ** Unable to upload the output archive file: SFTP command error: #{e}"
+          display '    Please manualy upload the output archive file to Puppet Support.'
+          display
+        end
+      end
+
       # Summary.
       # Instance Variables: @doc_url, @output_archive
 
@@ -1089,7 +1149,7 @@ module PuppetX
         display '  An overview of the data collected by this tool can be found at:'
         display "  #{@doc_url}"
         display
-        display '  Please upload the output archive file to Puppet Support.'
+        display '  Please upload the output archive file to Puppet Support.' unless @options[:upload]
         display
         display "Output archive file: #{@output_archive}"
         display
@@ -1189,14 +1249,14 @@ module PuppetX
           return
         end
         blacklist.each do |blacklist_key|
-          if json.kind_of?(Array)
+          if json.is_a?(Array)
             json.each do |item|
-              if item.kind_of?(Hash)
+              if item.is_a?(Hash)
                 item.delete(blacklist_key) if item.key?(blacklist_key)
               end
             end
           end
-          if json.kind_of?(Hash)
+          if json.is_a?(Hash)
             json.delete(blacklist_key) if json.key?(blacklist_key)
           end
         end
@@ -1212,7 +1272,7 @@ module PuppetX
       # Data
       #=========================================================================
 
-      def pgppublickey
+      def pgp_public_key
         result = <<-'PGPPUBLICKEY'
 -----BEGIN PGP PUBLIC KEY BLOCK-----
 Version: GnuPG v2.0.14 (GNU/Linux)
@@ -1268,6 +1328,71 @@ xfhzX6eZ+xft
 =j4/z
 -----END PGP PUBLIC KEY BLOCK-----
 PGPPUBLICKEY
+        result
+      end
+
+      def sftp_ssh_key
+        result = <<-'SSHKEY'
+-----BEGIN RSA PRIVATE KEY-----
+MIIJJgIBAAKCAgEAxuibs6PUKdeBpDt1gC/xs7s+6fzULBMfzoLaB6VcxmIBWxBG
+igASrojE/8pQ7NkPfqNGnzQa3xHY5at87NjG0zd8fe0aTHkd01Gy/1XWlyxOj1ys
+u9t2ycTgwDGEoTwR4Le8MEaq74aB9sJiwr88iNnNcCNPv+z385k5G9ErL8AyqGYu
+H0MT+7ixLQkXqghC2pYScsHUuIDtw9KECz4k8snGb25fJmup2uu+i3JuZ/ScdOWb
+olvZjOPeGiR+g5LWYHczDirXaRYxsHY1UTI85RuZbxlCF+pX1r5rFjQdpTIxXR+O
+SiRI184svSEwXsALornBmgfW9ywRPWUTD50Mg8/UdbHV8Py3A2EVfWa8kQ4/8i7e
+38mz7IIl/co1KONcrKzCnruM2Iuwhy/VHEyJB6s4tXbatLVKPu1cy0efllMwkOzP
+LnUUVWPo2BGOL+K8Hq7VCAngxAJUPgxxXWC0t53IUqspkIgDBzQDk3mI8vBQWlmR
+6c+y/8J4WzKnMdBcDal+WYnuWtibiOpf0I/SI5gMxSo5nRHE7Bi0ELASBIsUOYpI
+9ZFlB/qjurk3GzBV2egM1lqsgpkF0vZrrjEuCdPPK78ZRukXd3z4THgMt9xPKlEp
+BIj+0rFFhv0+pI0dKw1H3R7Ax4qD1Y+CSJ4J6BQshDYsf/KNk/3yx3I0HcsCASMC
+ggIAFrt/gj6b54ZX9YMjXxtsFIptlxWUl1KkjKE9fTd4US/FpAHcLQdSl5qaK9yb
+iMhZitDU3v6j/DyN0RrptKsPaJigg2uN+hx4b+wUdPPeAqX6WYbvK2mJ6yxxdQz5
+Nv+NA706FCVVXTPxmIs+fKgkLOWxFCFK8VzpIyd0PbGBR0kqXGNy/EIuK2WQl27A
+4Dt1Ws9SkMWx6TNOX4XF8qgEOQEd/hs+EwT9eBrxNIIbPxSkKp3l5qtpUe4oAvzb
+QjyqyTIxuHnsu42CBYnaNSpQGi8KOJUsH/2GYa9cshSVrHrD0CDdD8mh7McbDkzv
+lczOITnM+6kf4bvkto81YN6/mdVo+wrm83XdZWQ0mXMZExOE/KoyH3uCjOoeGtKv
+sSq1QcMrSzcAZCD76ky41TA2GrgKAoJ/3NK52OE0qetizRKYe9m51Zszq+PCGRET
+V1ISG48hxE6K78eYKogMXaLQbMLiE3r8T/URZHFpi97i7GcF7l7DMhcwP4WObmM0
+VADrcyzUiAu6rQGz+Rf9YSSHviGRNOtS7mp3ZxfkOwA+cBATt0ShcIlLGNsiBKAD
+RfyRVTH5SPl/+CcWpStzr2jKwzD8yMohycvE3p6wnysB9/dqqJLhbKU6tkdNEMmq
+6VDZ70aEAKYF41DQGqRjrOn7D+k8e0LpAXxBLwBDwcwuZGsCggEBAPKSuO0P0Nd8
+xBnwsTsUYun3O/L3FwBBZ37zHcOaR1G8pGfop1Qt7dLlST/jBSbq61KJspE0p5P1
+mC7jlR9nKqs1qndwFLjmg2A5ZvoOZVgw38d3mT/tnwZ3jWvhG19p8OiEYxUq40EG
+fY2eIBqMVhx7bw+zCwz0ttGmFJOUX+NTqcCEa24b8LCD7xBxwA6kI6tKKr1v0ilZ
+HyzXjvVIzyJ/TOqQYi6X3suIVMk5qFYB00+SRXs3G6iNAyQ3WVIuZR7NV/0DYqUh
+oZI6HDYyo+GAmqHt/X2zsCbB0/skrrE0ubuqZna75klUxyOg66TlfK5etvd00UnV
+8nomDdyJsR0CggEBANHrKCVhTd3pCBpYjXyMxzl9E2qxNVC8NAKrdVMZk1vuCNkf
+JUYbfpgu+9Cgzb/Eso5XbO/HQO16fQvsZ1yX6UVEqsRFDK4psfrNFcIWjnxszcL1
++RqzculpPHokDrCrDwwJxSHe8aakWsYJ64C7CE5hBYyy6HfYHSA0ALsI8uT8NCC2
+R7UxAFkw1kgE/oGKQEcMC2G0JMTXBtrPfXim4NvoaQcz+rF8D7GxvXfgznhcXSM1
+UlhVq5pyqpYAFgoReMhd9tluPoz7Of40v4mI2kXpTKoGkGWJZ5qhYB2CfFh1g6ia
+cPtRXD4SJU15M/nPoCz8lrVA4al9RkF72dsUfgcCggEAUyr9kxtdi7W/k91+l+m7
+g2q1d9+wHVhAvc+ybvMRI1aexIpH/5q38Ikgbazr0tQzbMF/DTaf2vUeO/ZBwZ+2
+251fBGDxKXOawefLiO7+LN2OjYgXSR5FJsnnWC/sILabvW836gATZsBlj6Ptv/WZ
+3eEtZHfmiBljQJC2mP+r2Ol8B33bsLkfUnZgl+x8XMqP4vTbdCZWrxc9430bEkTZ
+Taf9HTjRNIvXW7m2q2Q5txaRl5/dTtEQzBMXBRpKgpOQYlUIOX2A6CjJrnpS0MDn
+uweFeVjpMml+OSyDMYjrb/TR9zMb0O/3LxXAnoBQytJWoi8aKPTaCq/A2WwiAnhZ
++wKCAQEAifJNlOgr2vg4hldy63J0SlmBycTohYL9m1q60DVg1gLSnU77PLL7a1IT
+MVO6aBOLR5iJal5d3eLHM7ibseArk+tLpYx2DAzFakxBf4sqbwWryUKNwRbWfCCV
+dNXdxI2qzWWBi0lc+HqiDRx2MAXg4wyOnkmutSeeHHnx2f6Q/OA/gzX0m6PbqFNK
+/CCJ/VrZyEm+ViXsRtZyOASxicy/pnQnwuekvcaN+G18gfohR8eq60BMDimrSDy5
+PgAOe6UU23DyrCPf9j6xFMOTz2iPb8UyYRpBoc9SthJGecrGvcmRCGV9cfOjBDfP
+Xsv9lYhwkpdbuPAfQ341e31GBP7WeQKCAQAFc23bMMARJSZOf7oBk40Kk4u8ACe4
+/v+AEHP8sVHdY+qwl2H+6SjO0GV0Tj4mKo/zOF3+Akh2Qml0OA367UcZuL/HIXpU
+wvC+Yd4qLddWEF+ahuo65gEh/zOTHRoO0qn/eFoWTT6yOFZ8lqFVVQ4K0qnm1OSd
+02m9QcGPWsMffVXlUS12LIi88YVSopHbphKVUGHtQHQ6aqrdhz3Mob7szlSweRut
+axkTrmcSpBLBc2u4+doBX6ncEWg8MdDT2SbC+LP5EmyFTyXig6h5UfBUMA3Ukd9R
++6Qm7IaxFXF5fMtRlBiAaDeR79P76eNc61Iyf1Of1qW2iGC3+tcEFevg
+-----END RSA PRIVATE KEY-----
+SSHKEY
+        result
+      end
+
+      def sftp_ssh_known_hosts
+        result = <<-'SSHKNOWNHOSTS'
+customer-support.puppetlabs.net,support-sftp-pix-prod-1.it.puppet.net ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCrLB9mWc9pxVjUin3LtIRj3vMmqgv8oUKa/JAfXkRVoKgF7EYmmsjCU55pg+ZFBUD87hJ9JNKVM8TGEQ89sjnPBN6lCdKn0sc4wfVHqbh70VvX7LhQPM79eUUkvdfHcRep1VsgWrxJlKZH42X+ermWrnzE+1vz2OB/edDOjG4Ku/gh7YHFTS1VyPzf+R0q5Nl0VQvo0RHXaeVVNMLlMy5BuRQCU1+WPKKHtH+ZvzfE6/rc/CR8L4PKzcHuQN5n1bcl13hlsYr+IHMkESJyZWIHeZiKUSa7hu464Nl0LNGhDLN25bAZrqiFwiyNEhz1+v1BOhhgkFJ0vWSoKPlsqS55
+customer-support-syd.puppetlabs.net,support-sftp-syd-prod-1.it.puppet.net,10.128.4.46 ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCw9P+9D/QFSveyYQUEIkB0Ii9OPZpna32x05RKgMslFZWXyctXfhoFQvtE/df9TfcYA8dFZuibJZamQKwQ6VPjkbk7YdMpWbho5X9j78B7Dr74iQQKzZzLUYf4Nqrjpo+S6lHGLTA2Oxt8Hi6a7FqYqzVDR8umuetncLsPMSpjlU+veAcMIhPa5Lvw7m8dOoeiBfLs3TL+HgLMr/IUJ31QLUDIRDnB6nVBwoUU3OW+an9JksIeGyoB0kqT86nW22jFaZpzJ5YeRWvtmrlZkPjpjayPb91rKLd8ZLQGTR3Y55yArok9Q55+C74LsouNyFMKKdoa4dOh7ikhJ5wE1dU1
+SSHKNOWNHOSTS
         result
       end
     end
@@ -1353,6 +1478,17 @@ if File.expand_path(__FILE__) == File.expand_path($PROGRAM_NAME)
         exit 1
       end
       options[:ticket] = ticket
+    end
+
+    # options[:trust] = false
+    # opts.on('-k', '--trust', 'Internally verify the SFTP Host Key when uploading. Requires the --upload parameter') do
+    #  options[:trust] = true
+    # end
+
+    options[:upload] = false
+    opts.on('-u', '--upload', 'Upload to Puppet Support via SFTP. Requires the --ticket parameter') do
+      options[:trust] = true
+      options[:upload] = true
     end
     options[:z_do_not_delete_drop_directory] = false
     opts.on('-z', 'Do not delete output directory after archiving') do

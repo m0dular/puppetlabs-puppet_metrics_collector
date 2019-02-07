@@ -50,6 +50,14 @@ Puppet::Face.define(:enterprise, '1.0.0') do
       default_to { '' }
     end
 
+    # option '--trust' do
+    #  summary 'Internally verify the SFTP Host Key. Requires the --upload and --v3 parameters'
+    # end
+
+    option '--upload' do
+      summary 'Upload to Puppet Support via SFTP. Requires the --ticket and --v3 parameters'
+    end
+
     option '--v3' do
       summary 'Use Version 3.0 of this command (experimental)'
     end
@@ -131,6 +139,15 @@ Puppet::Face.define(:enterprise, '1.0.0') do
           Puppet.err "The ticket parameter may contain only numbers, letters, and dashes. Got: #{options[:ticket]}"
           exit 1
         end
+      end
+
+      if options[:upload] && (options[:ticket] == '' || options[:v3] != true)
+        Puppet.err('The upload parameter requires the --ticket and --v3 parameters.')
+        exit 1
+      end
+
+      if options[:upload]
+        options[:trust] = true
       end
 
       if options[:v3]
