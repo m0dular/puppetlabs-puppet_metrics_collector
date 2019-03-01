@@ -1098,13 +1098,13 @@ module PuppetX
           ssh_key_file = Tempfile.new('pes.ky')
           ssh_key_file.write(sftp_ssh_key)
           ssh_key_file.close
-          if @options[:trust]
+          if @options[:disable_host_key_check]
+            ssh_known_hosts = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+          else
             ssh_known_hosts_file = Tempfile.new('csp.ky')
             ssh_known_hosts_file.write(sftp_ssh_known_hosts)
             ssh_known_hosts_file.close
-            ssh_known_hosts = "-o UserKnownHostsFile=#{ssh_known_hosts_file.path}"
-          else
-            ssh_known_hosts = ''
+            ssh_known_hosts = "-o StrictHostKeyChecking=yes -o UserKnownHostsFile=#{ssh_known_hosts_file.path}"
           end
           # https://stribika.github.io/2015/01/04/secure-secure-shell.html
           # ssh_ciphers        = 'Ciphers=chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr'
@@ -1118,7 +1118,7 @@ module PuppetX
           sftp_output = Facter::Core::Execution.execute(command)
           unless $?.to_i.zero?
             ssh_key_file.unlink
-            ssh_known_hosts_file.unlink if @options[:trust]
+            ssh_known_hosts_file.unlink unless @options[:disable_host_key_check]
             display ' ** Unable to upload the output archive file. SFTP Output:'
             display
             display sftp_output
@@ -1128,7 +1128,7 @@ module PuppetX
           end
         rescue Facter::Core::Execution::ExecutionFailure => e
           ssh_key_file.unlink
-          ssh_known_hosts_file.unlink if @options[:trust]
+          ssh_known_hosts_file.unlink unless @options[:disable_host_key_check]
           display " ** Unable to upload the output archive file: SFTP command error: #{e}"
           display '    Please manualy upload the output archive file to Puppet Support.'
           display
@@ -1393,7 +1393,7 @@ SSHKEY
 # Primary
 customer-support.puppetlabs.net,support-sftp-pix-prod-1.it.puppet.net ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCrLB9mWc9pxVjUin3LtIRj3vMmqgv8oUKa/JAfXkRVoKgF7EYmmsjCU55pg+ZFBUD87hJ9JNKVM8TGEQ89sjnPBN6lCdKn0sc4wfVHqbh70VvX7LhQPM79eUUkvdfHcRep1VsgWrxJlKZH42X+ermWrnzE+1vz2OB/edDOjG4Ku/gh7YHFTS1VyPzf+R0q5Nl0VQvo0RHXaeVVNMLlMy5BuRQCU1+WPKKHtH+ZvzfE6/rc/CR8L4PKzcHuQN5n1bcl13hlsYr+IHMkESJyZWIHeZiKUSa7hu464Nl0LNGhDLN25bAZrqiFwiyNEhz1+v1BOhhgkFJ0vWSoKPlsqS55
 customer-support.puppetlabs.net,support-sftp-pix-prod-1.it.puppet.net ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBOwBtY6ojejMa6tl9QSAWDi2pSpTYBKldD3r6kIOJDTd2b7x99WQPFhJgWdJ76ANIolvEWI5lAkvFwMJ5SMG5Ak=
-customer-support.puppetlabs.net,support-sftp-pix-prod-1.it.puppet.net ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIO8GiFNutya82Ya+xeI8LWEbA2EmwVQF5gtvjsJ6s+
+customer-support.puppetlabs.net,support-sftp-pix-prod-1.it.puppet.net ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIO8GiFNutya82Ya+xeI8LWEbA2EmwVQF5gtvjsJ6s+W0
 # Asia-Pacific
 customer-support-syd.puppetlabs.net,support-sftp-syd-prod-1.it.puppet.net ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCw9P+9D/QFSveyYQUEIkB0Ii9OPZpna32x05RKgMslFZWXyctXfhoFQvtE/df9TfcYA8dFZuibJZamQKwQ6VPjkbk7YdMpWbho5X9j78B7Dr74iQQKzZzLUYf4Nqrjpo+S6lHGLTA2Oxt8Hi6a7FqYqzVDR8umuetncLsPMSpjlU+veAcMIhPa5Lvw7m8dOoeiBfLs3TL+HgLMr/IUJ31QLUDIRDnB6nVBwoUU3OW+an9JksIeGyoB0kqT86nW22jFaZpzJ5YeRWvtmrlZkPjpjayPb91rKLd8ZLQGTR3Y55yArok9Q55+C74LsouNyFMKKdoa4dOh7ikhJ5wE1dU1
 customer-support-syd.puppetlabs.net,support-sftp-syd-prod-1.it.puppet.net ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBFUTiJ8+OWy3QIF2ajlOaiE7k10Ae1TP9eh4ClgNMKvrGXojaJ/qztQHGQbhsDLQT0BduJ24ow58bXebziz5JCs=
@@ -1448,6 +1448,10 @@ if File.expand_path(__FILE__) == File.expand_path($PROGRAM_NAME)
     opts.on('-d', '--dir DIRECTORY', "Output directory. Defaults to: #{default_dir}") do |dir|
       options[:dir] = dir
     end
+    options[:disable_host_key_check] = false
+    opts.on('-k', '--disable_host_key_check', 'Do not verify the SFTP Host Key. Requires the --upload parameter') do
+      options[:disable_host_key_check] = true
+    end
     options[:encrypt] = false
     opts.on('-e', '--encrypt', 'Encrypt output using GPG') do
       options[:encrypt] = true
@@ -1485,15 +1489,8 @@ if File.expand_path(__FILE__) == File.expand_path($PROGRAM_NAME)
       end
       options[:ticket] = ticket
     end
-
-    # options[:trust] = false
-    # opts.on('-k', '--trust', 'Internally verify the SFTP Host Key when uploading. Requires the --upload parameter') do
-    #  options[:trust] = true
-    # end
-
     options[:upload] = false
     opts.on('-u', '--upload', 'Upload to Puppet Support via SFTP. Requires the --ticket parameter') do
-      options[:trust] = true
       options[:upload] = true
     end
     options[:z_do_not_delete_drop_directory] = false
