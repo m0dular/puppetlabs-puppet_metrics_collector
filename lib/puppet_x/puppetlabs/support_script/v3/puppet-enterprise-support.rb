@@ -26,9 +26,7 @@ module PuppetX
 
         @pgp_recipient = 'FD172197'
 
-        # NOTICE: customer-support.puppetlabs.net does not resolve to support-sftp-pix-prod-1.it.puppet.net internaly.
-        # CHANGE: support-sftp-pix-prod-1.it.puppet.net TO customer-support.puppetlabs.net before merging.
-        @sftp_server = 'support-sftp-pix-prod-1.it.puppet.net'
+        @sftp_server = 'customer-support.puppetlabs.net'
         @sftp_url    = "puppet.enterprise.support@#{@sftp_server}:/drop/"
 
         # Cache lookups about this host.
@@ -1136,22 +1134,27 @@ module PuppetX
       end
 
       # Summary.
-      # Instance Variables: @doc_url, @output_archive
+      # Instance Variables: @options, @sftp_server, @doc_url, @output_archive
 
       def report_summary
+        if @options[:upload]
+          display "File uploaded to: #{@sftp_server}"
+          display
+        else
+          display 'Puppet Enterprise customers ...'
+          display
+          display '  We recommend that you examine the collected data before forwarding to Puppet,'
+          display '  as it may contain sensitive information that you may wish to redact.'
+          display
+          display '  An overview of the data collected by this tool can be found at:'
+          display "  #{@doc_url}"
+          display
+          display '  Please upload the output archive file to Puppet Support.' unless @options[:upload]
+          display
+          display "Output archive file: #{@output_archive}"
+          display
+        end
         display 'Done!'
-        display
-        display 'Puppet Enterprise customers ...'
-        display
-        display '  We recommend that you examine the collected data before forwarding to Puppet,'
-        display '  as it may contain sensitive information that you may wish to redact.'
-        display
-        display '  An overview of the data collected by this tool can be found at:'
-        display "  #{@doc_url}"
-        display
-        display '  Please upload the output archive file to Puppet Support.' unless @options[:upload]
-        display
-        display "Output archive file: #{@output_archive}"
         display
       end
 
@@ -1391,13 +1394,13 @@ SSHKEY
       def sftp_ssh_known_hosts
         result = <<-'SSHKNOWNHOSTS'
 # Primary
-customer-support.puppetlabs.net,support-sftp-pix-prod-1.it.puppet.net ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCrLB9mWc9pxVjUin3LtIRj3vMmqgv8oUKa/JAfXkRVoKgF7EYmmsjCU55pg+ZFBUD87hJ9JNKVM8TGEQ89sjnPBN6lCdKn0sc4wfVHqbh70VvX7LhQPM79eUUkvdfHcRep1VsgWrxJlKZH42X+ermWrnzE+1vz2OB/edDOjG4Ku/gh7YHFTS1VyPzf+R0q5Nl0VQvo0RHXaeVVNMLlMy5BuRQCU1+WPKKHtH+ZvzfE6/rc/CR8L4PKzcHuQN5n1bcl13hlsYr+IHMkESJyZWIHeZiKUSa7hu464Nl0LNGhDLN25bAZrqiFwiyNEhz1+v1BOhhgkFJ0vWSoKPlsqS55
-customer-support.puppetlabs.net,support-sftp-pix-prod-1.it.puppet.net ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBOwBtY6ojejMa6tl9QSAWDi2pSpTYBKldD3r6kIOJDTd2b7x99WQPFhJgWdJ76ANIolvEWI5lAkvFwMJ5SMG5Ak=
-customer-support.puppetlabs.net,support-sftp-pix-prod-1.it.puppet.net ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIO8GiFNutya82Ya+xeI8LWEbA2EmwVQF5gtvjsJ6s+W0
+customer-support.puppetlabs.net ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCrLB9mWc9pxVjUin3LtIRj3vMmqgv8oUKa/JAfXkRVoKgF7EYmmsjCU55pg+ZFBUD87hJ9JNKVM8TGEQ89sjnPBN6lCdKn0sc4wfVHqbh70VvX7LhQPM79eUUkvdfHcRep1VsgWrxJlKZH42X+ermWrnzE+1vz2OB/edDOjG4Ku/gh7YHFTS1VyPzf+R0q5Nl0VQvo0RHXaeVVNMLlMy5BuRQCU1+WPKKHtH+ZvzfE6/rc/CR8L4PKzcHuQN5n1bcl13hlsYr+IHMkESJyZWIHeZiKUSa7hu464Nl0LNGhDLN25bAZrqiFwiyNEhz1+v1BOhhgkFJ0vWSoKPlsqS55
+customer-support.puppetlabs.net ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBOwBtY6ojejMa6tl9QSAWDi2pSpTYBKldD3r6kIOJDTd2b7x99WQPFhJgWdJ76ANIolvEWI5lAkvFwMJ5SMG5Ak=
+customer-support.puppetlabs.net ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIO8GiFNutya82Ya+xeI8LWEbA2EmwVQF5gtvjsJ6s+W0
 # Asia-Pacific
-customer-support-syd.puppetlabs.net,support-sftp-syd-prod-1.it.puppet.net ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCw9P+9D/QFSveyYQUEIkB0Ii9OPZpna32x05RKgMslFZWXyctXfhoFQvtE/df9TfcYA8dFZuibJZamQKwQ6VPjkbk7YdMpWbho5X9j78B7Dr74iQQKzZzLUYf4Nqrjpo+S6lHGLTA2Oxt8Hi6a7FqYqzVDR8umuetncLsPMSpjlU+veAcMIhPa5Lvw7m8dOoeiBfLs3TL+HgLMr/IUJ31QLUDIRDnB6nVBwoUU3OW+an9JksIeGyoB0kqT86nW22jFaZpzJ5YeRWvtmrlZkPjpjayPb91rKLd8ZLQGTR3Y55yArok9Q55+C74LsouNyFMKKdoa4dOh7ikhJ5wE1dU1
-customer-support-syd.puppetlabs.net,support-sftp-syd-prod-1.it.puppet.net ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBFUTiJ8+OWy3QIF2ajlOaiE7k10Ae1TP9eh4ClgNMKvrGXojaJ/qztQHGQbhsDLQT0BduJ24ow58bXebziz5JCs=
-customer-support-syd.puppetlabs.net,support-sftp-syd-prod-1.it.puppet.net ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ+v91GesXhPY9+hpOTqPIFlyFkMT8CrKDVNL7vFycP2
+customer-support-syd.puppetlabs.net ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCw9P+9D/QFSveyYQUEIkB0Ii9OPZpna32x05RKgMslFZWXyctXfhoFQvtE/df9TfcYA8dFZuibJZamQKwQ6VPjkbk7YdMpWbho5X9j78B7Dr74iQQKzZzLUYf4Nqrjpo+S6lHGLTA2Oxt8Hi6a7FqYqzVDR8umuetncLsPMSpjlU+veAcMIhPa5Lvw7m8dOoeiBfLs3TL+HgLMr/IUJ31QLUDIRDnB6nVBwoUU3OW+an9JksIeGyoB0kqT86nW22jFaZpzJ5YeRWvtmrlZkPjpjayPb91rKLd8ZLQGTR3Y55yArok9Q55+C74LsouNyFMKKdoa4dOh7ikhJ5wE1dU1
+customer-support-syd.puppetlabs.net ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBFUTiJ8+OWy3QIF2ajlOaiE7k10Ae1TP9eh4ClgNMKvrGXojaJ/qztQHGQbhsDLQT0BduJ24ow58bXebziz5JCs=
+customer-support-syd.puppetlabs.net ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ+v91GesXhPY9+hpOTqPIFlyFkMT8CrKDVNL7vFycP2
 SSHKNOWNHOSTS
         result
       end
