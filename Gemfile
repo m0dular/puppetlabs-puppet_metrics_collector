@@ -14,10 +14,6 @@ group :test do
   gem "rspec-puppet", '~> 2.0'
   gem "puppetlabs_spec_helper"
   gem "metadata-json-lint"
-  gem "rspec-puppet-facts"
-  gem 'rubocop', '0.42.0'
-  gem 'simplecov', '>= 0.11.0'
-  gem 'simplecov-console'
 end
 
 if File.exists? "#{__FILE__}.local"
