@@ -524,6 +524,11 @@ module PuppetX
         exec_drop('umask',                scope_directory, 'umask.txt')
         exec_drop('uname -a',             scope_directory, 'uname.txt')
         exec_drop('uptime',               scope_directory, 'uptime.txt')
+        puppet_enterprise_services_list.each do |service|
+          ['memory','cpu','blkio','devices','pids','systemd'].each do |fs|
+            copy_drop_match("/sys/fs/cgroup/#{fs}/system.slice/#{service}.service/", scope_directory, '*')
+          end
+        end
       end
 
       #=========================================================================
