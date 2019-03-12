@@ -352,9 +352,9 @@ module PuppetX
         end
 
         # Collect Puppet Enterprise Infrastructure diagnostics.
-        exec_drop("#{@paths[:puppetlabs_bin]}/puppet-infrastructure status --format json",                 scope_directory, 'puppet_infra_status.json')
-        exec_drop("#{@paths[:puppetlabs_bin]}/puppet-infrastructure tune --color=false --debug",           scope_directory, 'puppet_infra_tune.txt')
-        exec_drop("#{@paths[:puppetlabs_bin]}/puppet-infrastructure tune --color=false --debug --current", scope_directory, 'puppet_infra_tune_current.txt')
+        exec_drop("#{@paths[:puppetlabs_bin]}/puppet-infrastructure status --format json", scope_directory, 'puppet_infra_status.json')
+        exec_drop("#{@paths[:puppetlabs_bin]}/puppet-infrastructure tune",                 scope_directory, 'puppet_infra_tune.txt')
+        exec_drop("#{@paths[:puppetlabs_bin]}/puppet-infrastructure tune --current",       scope_directory, 'puppet_infra_tune_current.txt')
 
         # Collect Puppet Enterprise Metrics.
         recreate_parent_path = false

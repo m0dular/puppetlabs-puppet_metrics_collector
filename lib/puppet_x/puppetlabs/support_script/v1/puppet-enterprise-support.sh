@@ -1676,6 +1676,23 @@ pe_infra_status() {
   fi
 }
 
+# Gather infrastructure tuning
+#
+# Global Variables Used:
+#   None
+#
+# Arguments:
+#   None
+#
+# Returns:
+#   None
+pe_infra_tune() {
+  if [ -x /opt/puppetlabs/bin/puppet-infrastructure ]; then
+    run_diagnostic '/opt/puppetlabs/bin/puppet-infrastructure tune' 'enterprise/puppet_infra_tune.txt'
+    run_diagnostic '/opt/puppetlabs/bin/puppet-infrastructure tune --current' 'enterprise/puppet_infra_tune_current.txt'
+  fi
+}
+
 # Write metadata to a JSON file
 #
 # This function writes out a metadata file which contains information about
@@ -1850,6 +1867,7 @@ list_all_services
 grab_env_vars
 can_contact_master
 pe_infra_status
+pe_infra_tune
 pe_logs
 pe_metrics
 get_state
