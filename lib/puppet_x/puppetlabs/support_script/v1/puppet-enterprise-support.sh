@@ -789,6 +789,27 @@ facter_checks() {
   rm "$DROP"/system/facter_output.txt
 }
 
+get_proc_files() {
+  pidarray=()
+  pidarray+=("$(pgrep -f "puppetlabs/bolt-server" || true)")
+  if [ -e "/var/run/puppetlabs/agent.pid" ]; then
+    pidarray+=("$(cat /var/run/puppetlabs/agent.pid)")
+  fi
+  pidarray+=("$(pidof pxp-agent)")
+  for SERVICE in console-services orchestration-services puppetdb puppetserver; do
+    pidarray+=("$(cat /var/run/puppetlabs/"${SERVICE}"/"${SERVICE}".pid)")
+  done
+  for pid in "${pidarray[@]}"; do
+    ([[ "${pid}" =~ ^[0-9]+$ ]] && [[ -e /proc/"${pid}" ]]) || continue
+    destpath="${DROP}"/system/proc/"${pid}"
+    mkdir -p "${destpath}"
+    for FILE in cmdline limits environ; do
+      cp /proc/"${pid}"/"${FILE}" "${destpath}"
+    done
+    readlink /proc/"${pid}"/exe > "${destpath}"/exe
+  done
+}
+
 etc_checks() {
   cp -p /etc/resolv.conf "${DROP?}/system/etc"
   cp -p /etc/nsswitch.conf "${DROP}/system/etc"
@@ -1855,6 +1876,7 @@ pe_metrics
 get_state
 other_logs
 ifconfig_output
+get_proc_files
 
 if is_package_installed 'pe-puppetserver'; then
   check_certificates

@@ -524,6 +524,25 @@ module PuppetX
         exec_drop('umask',                scope_directory, 'umask.txt')
         exec_drop('uname -a',             scope_directory, 'uname.txt')
         exec_drop('uptime',               scope_directory, 'uptime.txt')
+
+        pids = Array.new
+        pids.push(exec_return_result('pgrep -f "puppetlabs/bolt-server"'))
+        if(File.exists?('/var/run/puppetlabs/agent.pid'))
+          pids.push(File.read('/var/run/puppetlabs/agent.pid'))
+        end
+        pids.push(exec_return_result('pidof pxp-agent'))
+
+        ['console-services','orchestration-services','puppetdb','puppetserver'].each do |service|
+          pids.push(File.read("/var/run/puppetlabs/#{service}/#{service}.pid").chomp!)
+        end
+        pids.each do |pid|
+          next unless ( pid.match?(/^\d+$/) && Dir.exists?("/proc/#{pid}") )
+          destpath="#{scope_directory}/proc/#{pid}"
+          ['cmdline','limits','environ'].each do |procfile|
+            copy_drop("/proc/#{pid}/#{procfile}", scope_directory)
+          end
+          data_drop(File.readlink("/proc/#{pid}/exe"), destpath, 'exe')
+        end
       end
 
       #=========================================================================
