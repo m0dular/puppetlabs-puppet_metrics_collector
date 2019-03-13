@@ -622,7 +622,7 @@ module PuppetX
 
       def copy_drop_match(src, dst, glob, recreate_parent_path = true)
         parents_option = recreate_parent_path ? ' --parents' : ''
-        command_line = %(find #{src} -type f -name #{glob} | xargs --no-run-if-empty cp --preserve #{parents_option} --target-directory #{dst})
+        command_line = %(find #{src} -type f -name "#{glob}" | xargs --no-run-if-empty cp --preserve #{parents_option} --target-directory #{dst})
         unless File.exist?(src)
           logline "copy_drop_match: source not found: #{src}"
           return false
