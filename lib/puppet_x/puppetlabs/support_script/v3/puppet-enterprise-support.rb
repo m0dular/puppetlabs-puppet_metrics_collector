@@ -2,6 +2,12 @@
 
 require 'json'
 
+# Test nodes do not meet the minimum system requirements for tune to optimize.
+if ENV['BEAKER_TESTING']
+  ENV['TEST_CPU'] = '8'
+  ENV['TEST_RAM'] = '16384'
+end
+
 module PuppetX
   module Puppetlabs
     # Collects diagnostic information about Puppet Enterprise for Support.
