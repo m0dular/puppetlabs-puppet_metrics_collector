@@ -40,6 +40,7 @@ module PuppetX
       end
 
       def run!
+        validate_operating_system
         validate_user
         validate_output_directory
         validate_output_directory_disk_space
@@ -654,6 +655,15 @@ module PuppetX
       #=========================================================================
       # Inspection
       #=========================================================================
+
+      # Validate the operating system, or exit.
+
+      def validate_operating_system
+        script_name = File.basename(__FILE__)
+        command = %(uname -s)
+        kernel_name = exec_return_result(command)
+        fail_and_exit("#{script_name} is limited to supported operating systems for master platorms") unless kernel_name == 'Linux'
+      end
 
       # Validate the runtime user, or exit.
 
