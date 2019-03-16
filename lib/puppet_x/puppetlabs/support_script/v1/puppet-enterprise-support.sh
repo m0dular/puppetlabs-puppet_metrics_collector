@@ -19,6 +19,9 @@
 if [[ -n "${BEAKER_TESTING}" ]]; then
   # Enable command tracing and strict failures during tests.
   set -xeuo pipefail
+  # Test nodes do not meet the minimum system requirements for tune to optimize.
+  export TEST_CPU=8
+  export TEST_RAM=16384
 fi
 
 
@@ -1867,7 +1870,6 @@ list_all_services
 grab_env_vars
 can_contact_master
 pe_infra_status
-pe_infra_tune
 pe_logs
 pe_metrics
 get_state
@@ -1915,6 +1917,11 @@ fi
 
 if is_package_installed 'pe-activemq'; then
   activemq_limits
+fi
+
+# Only on the Primary Master.
+if [ is_package_installed 'pe-puppetserver'] && [ is_package_installed 'pe-installer' ]; then
+  pe_infra_tune
 fi
 
 tar_change_directory=$(dirname "${DROP}")
