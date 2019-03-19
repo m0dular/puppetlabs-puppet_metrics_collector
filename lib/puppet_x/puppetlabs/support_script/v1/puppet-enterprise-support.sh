@@ -1920,7 +1920,7 @@ if is_package_installed 'pe-activemq'; then
 fi
 
 # Only on the Primary Master.
-if [ is_package_installed 'pe-puppetserver'] && [ is_package_installed 'pe-installer' ]; then
+if is_package_installed 'pe-puppetserver' && is_package_installed 'pe-installer' ; then
   pe_infra_tune
 fi
 
