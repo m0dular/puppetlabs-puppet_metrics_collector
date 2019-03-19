@@ -27,10 +27,6 @@ Puppet::Face.define(:enterprise, '1.0.0') do
       default_to { default_dir }
     end
 
-    option '--disable-host-key-check' do
-     summary 'Do not verify the SFTP Host Key. Requires the --upload and --v3 parameters'
-    end
-
     option '--encrypt' do
       summary 'Encrypt output using GPG'
     end
@@ -56,6 +52,18 @@ Puppet::Face.define(:enterprise, '1.0.0') do
 
     option '--upload' do
       summary 'Upload to Puppet Support via SFTP. Requires the --ticket and --v3 parameters'
+    end
+
+    option '--upload-disable-host-key-check' do
+     summary 'Disable SFTP Host Key Check. Requires the --upload parameter'
+    end
+
+    option '--upload-key FILE' do
+      summary 'Key for SFTP. Requires the --upload parameter'
+    end
+
+    option '--upload-user USER' do
+      summary 'User for SFTP. Requires the --upload parameter'
     end
 
     option '--v3' do
@@ -153,10 +161,6 @@ Puppet::Face.define(:enterprise, '1.0.0') do
       if options[:upload] && (options[:ticket] == '' || options[:v3] != true)
         Puppet.err('The upload parameter requires the --ticket and --v3 parameters.')
         exit 1
-      end
-
-      if options[:upload]
-        support_script_parameters.push('-u')
       end
 
       if options[:v3]

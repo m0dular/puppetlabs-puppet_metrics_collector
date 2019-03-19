@@ -26,8 +26,8 @@ module PuppetX
 
         @pgp_recipient = 'FD172197'
 
-        @sftp_server = 'customer-support.puppetlabs.net'
-        @sftp_url    = "puppet.enterprise.support@#{@sftp_server}:/drop/"
+        @sftp_host = 'customer-support.puppetlabs.net'
+        @sftp_user = 'puppet.enterprise.support'
 
         # Cache lookups about this host.
         @platform = {}
@@ -46,6 +46,7 @@ module PuppetX
         validate_user
         validate_output_directory
         validate_output_directory_disk_space
+        validate_upload_key
 
         query_platform
 
@@ -704,6 +705,13 @@ module PuppetX
         fail_and_exit("Not enough free disk space in #{@options[:dir]}. Available: #{available} MB, Required: #{required} MB") if available < required
       end
 
+      # Verify upload key exists if specified, or exit.
+
+      def validate_upload_key
+        return unless @options[:upload_key]
+        fail_and_exit("#{@options[:upload_key]} does not exist") unless File.exists?(@options[:upload_key])
+      end
+
       # Query the runtime platform.
       # Instance Variables: @platform
       #
@@ -1081,7 +1089,7 @@ module PuppetX
       end
 
       # Optionally upload the archive file to Puppet Support.
-      # Instance Variables: @options, @sftp_url, @output_archive
+      # Instance Variables: @options, @sftp_host, @sftp_user, @output_archive
 
       def optionally_upload_to_puppet_support
         return unless @options[:upload]
@@ -1092,31 +1100,44 @@ module PuppetX
           display
           return
         end
-        begin
+
+        if @options[:upload_disable_host_key_check]
+          ssh_known_hosts = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+        else
+          ssh_known_hosts_file = Tempfile.new('csp.ky')
+          ssh_known_hosts_file.write(sftp_ssh_known_hosts)
+          ssh_known_hosts_file.close
+          ssh_known_hosts = "-o StrictHostKeyChecking=yes -o UserKnownHostsFile=#{ssh_known_hosts_file.path}"
+        end
+        if @options[:upload_user]
+          sftp_url = "#{@options[:upload_user]}@#{@sftp_host}:/"
+        else
+          sftp_url = "#{@sftp_user}@#{@sftp_host}:/drop/"
+        end
+        if @options[:upload_key]
+          ssh_key_file = File.absolute_path(@options[:upload_key])
+          ssh_identity = "IdentityFile=#{ssh_key_file}"
+        else
           ssh_key_file = Tempfile.new('pes.ky')
-          ssh_key_file.write(sftp_ssh_key)
+          ssh_key_file.write(default_sftp_key)
           ssh_key_file.close
-          if @options[:disable_host_key_check]
-            ssh_known_hosts = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
-          else
-            ssh_known_hosts_file = Tempfile.new('csp.ky')
-            ssh_known_hosts_file.write(sftp_ssh_known_hosts)
-            ssh_known_hosts_file.close
-            ssh_known_hosts = "-o StrictHostKeyChecking=yes -o UserKnownHostsFile=#{ssh_known_hosts_file.path}"
-          end
-          # https://stribika.github.io/2015/01/04/secure-secure-shell.html
-          # ssh_ciphers        = 'Ciphers=chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr'
-          # ssh_kex_algorithms = 'KexAlgorithms=curve25519-sha256@libssh.org,diffie-hellman-group-exchange-sha256'
-          # ssh_macs           = 'MACs=hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-512,hmac-sha2-256,umac-128@openssh.com'
-          ssh_ciphers        = 'Ciphers=aes256-ctr,aes192-ctr,aes128-ctr'
-          ssh_kex_algorithms = 'KexAlgorithms=diffie-hellman-group-exchange-sha256'
-          ssh_macs           = 'MACs=hmac-sha2-512,hmac-sha2-256'
-          ssh_options = %(-o "#{ssh_ciphers}" -o "#{ssh_kex_algorithms}" -o "#{ssh_macs}" -o "Protocol=2" -o "ConnectTimeout=16" -o "IdentityFile=#{ssh_key_file.path}" #{ssh_known_hosts} -o "BatchMode=yes")
-          command = %(sftp #{ssh_options} #{@sftp_url} <<< $'put #{@output_archive}' 2>&1)
-          sftp_output = Facter::Core::Execution.execute(command)
+          ssh_identity = "IdentityFile=#{ssh_key_file.path}"
+        end
+        # https://stribika.github.io/2015/01/04/secure-secure-shell.html
+        # ssh_ciphers        = 'Ciphers=chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr'
+        # ssh_kex_algorithms = 'KexAlgorithms=curve25519-sha256@libssh.org,diffie-hellman-group-exchange-sha256'
+        # ssh_macs         = 'MACs=hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-512,hmac-sha2-256,umac-128@openssh.com'
+        ssh_ciphers        = 'Ciphers=aes256-ctr,aes192-ctr,aes128-ctr'
+        ssh_kex_algorithms = 'KexAlgorithms=diffie-hellman-group-exchange-sha256'
+        ssh_macs           = 'MACs=hmac-sha2-512,hmac-sha2-256'
+        ssh_options        = %(-o "#{ssh_ciphers}" -o "#{ssh_kex_algorithms}" -o "#{ssh_macs}" -o "Protocol=2" -o "ConnectTimeout=16"  #{ssh_known_hosts} -o "#{ssh_identity}" -o "BatchMode=yes")
+        sftp_command = %(sftp #{ssh_options} #{sftp_url} <<< $'put #{@output_archive}' 2>&1)
+
+        begin
+          sftp_output = Facter::Core::Execution.execute(sftp_command)
           unless $?.to_i.zero?
-            ssh_key_file.unlink
-            ssh_known_hosts_file.unlink unless @options[:disable_host_key_check]
+            ssh_key_file.unlink unless @options[:upload_key]
+            ssh_known_hosts_file.unlink unless @options[:upload_disable_host_key_check]
             display ' ** Unable to upload the output archive file. SFTP Output:'
             display
             display sftp_output
@@ -1125,20 +1146,24 @@ module PuppetX
             display
           end
         rescue Facter::Core::Execution::ExecutionFailure => e
-          ssh_key_file.unlink
-          ssh_known_hosts_file.unlink unless @options[:disable_host_key_check]
-          display " ** Unable to upload the output archive file: SFTP command error: #{e}"
+          ssh_key_file.unlink unless @options[:upload_key]
+          ssh_known_hosts_file.unlink unless @options[:upload_disable_host_key_check]
+          display ' ** Unable to upload the output archive file: SFTP command error:'
+          display
+          display e
+          display
           display '    Please manualy upload the output archive file to Puppet Support.'
+          display
           display
         end
       end
 
       # Summary.
-      # Instance Variables: @options, @sftp_server, @doc_url, @output_archive
+      # Instance Variables: @options, @sftp_host, @doc_url, @output_archive
 
       def report_summary
         if @options[:upload]
-          display "File uploaded to: #{@sftp_server}"
+          display "File uploaded to: #{@sftp_host}"
           display
         else
           display 'Puppet Enterprise customers ...'
@@ -1334,7 +1359,7 @@ PGPPUBLICKEY
         result
       end
 
-      def sftp_ssh_key
+      def default_sftp_key
         result = <<-'SSHKEY'
 -----BEGIN RSA PRIVATE KEY-----
 MIIJJgIBAAKCAgEAxuibs6PUKdeBpDt1gC/xs7s+6fzULBMfzoLaB6VcxmIBWxBG
@@ -1451,10 +1476,6 @@ if File.expand_path(__FILE__) == File.expand_path($PROGRAM_NAME)
     opts.on('-d', '--dir DIRECTORY', "Output directory. Defaults to: #{default_dir}") do |dir|
       options[:dir] = dir
     end
-    options[:disable_host_key_check] = false
-    opts.on('-k', '--disable_host_key_check', 'Do not verify the SFTP Host Key. Requires the --upload parameter') do
-      options[:disable_host_key_check] = true
-    end
     options[:encrypt] = false
     opts.on('-e', '--encrypt', 'Encrypt output using GPG') do
       options[:encrypt] = true
@@ -1495,6 +1516,18 @@ if File.expand_path(__FILE__) == File.expand_path($PROGRAM_NAME)
     options[:upload] = false
     opts.on('-u', '--upload', 'Upload to Puppet Support via SFTP. Requires the --ticket parameter') do
       options[:upload] = true
+    end
+    options[:upload_disable_host_key_check] = false
+    opts.on('--upload_disable_host_key_check', 'Disable SFTP Host Key Check. Requires the --upload parameter') do
+      options[:upload_disable_host_key_check] = true
+    end
+    options[:upload_key] = ''
+    opts.on('--upload_key FILE', 'Key for SFTP. Requires the --upload parameter') do |upload_key|
+      options[:upload_key] = upload_key
+    end
+    options[:upload_user] = ''
+    opts.on('--upload_user USER', 'User for SFTP. Requires the --upload parameter') do |upload_user|
+      options[:upload_user] = upload_user
     end
     options[:z_do_not_delete_drop_directory] = false
     opts.on('-z', 'Do not delete output directory after archiving') do
