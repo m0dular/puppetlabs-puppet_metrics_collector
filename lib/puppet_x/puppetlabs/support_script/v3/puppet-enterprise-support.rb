@@ -531,6 +531,10 @@ module PuppetX
         exec_drop('umask',                scope_directory, 'umask.txt')
         exec_drop('uname -a',             scope_directory, 'uname.txt')
         exec_drop('uptime',               scope_directory, 'uptime.txt')
+        puppet_enterprise_services_list.each do |service|
+          exec_drop("systemctl status #{service}", scope_directory, 'systemctl-status.txt') 
+          data_drop("=" * 100 + "\n", scope_directory, 'systemctl-status.txt')
+        end 
       end
 
       #=========================================================================

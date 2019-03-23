@@ -860,6 +860,9 @@ list_all_services() {
     rhel|centos|sles|debian|ubuntu)
       if (pidof systemd &> /dev/null); then
         run_diagnostic "systemctl list-units" "system/services.txt"
+        for service in pe-puppetserver pe-bolt-server pe-console-services pe-nginx pe-orchestration-services pe-postgresql pe-puppetdb pe-puppetserver; do
+          { systemctl status "${service}" || true; printf '=%.0s' {1..100}; printf '\n'; } >> system/systemctl-status.txt
+        done
       else
         if cmd chkconfig; then
           run_diagnostic "chkconfig --list" "system/services.txt"
