@@ -129,7 +129,17 @@ module PuppetX
           'nginx/conf.d',
           'nginx/nginx.conf',
           'orchestration-services/bootstrap.cfg',
-          'orchestration-services/conf.d',
+          # NOTE: The PE Orchestrator stores encryption keys in its conf.d.
+          #       Therefore, we explicitly list what to gather.
+          'orchestration-services/conf.d/global.conf',
+          'orchestration-services/conf.d/metrics.conf',
+          'orchestration-services/conf.d/orchestrator.conf',
+          'orchestration-services/conf.d/web-routes.conf',
+          'orchestration-services/conf.d/webserver.conf',
+          'orchestration-services/conf.d/inventory.conf',
+          'orchestration-services/conf.d/auth.conf',
+          'orchestration-services/conf.d/pcp-broker.conf',
+          'orchestration-services/conf.d/analytics.conf',
           'orchestration-services/logback.xml',
           'orchestration-services/request-logging.xml',
           'puppet/auth.conf',
