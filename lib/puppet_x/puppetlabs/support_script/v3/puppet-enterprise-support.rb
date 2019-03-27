@@ -9,6 +9,94 @@ if ENV['BEAKER_TESTING']
   ENV['TEST_RAM'] = '16384'
 end
 
+
+module PuppetX
+module Puppetlabs
+# Diagnostic tools for Puppet Enterprise
+#
+# This module contains components for running diagnostic checks on Puppet
+# Enterprise installations.
+module SupportScript
+  # A restricting tag for diagnostics
+  #
+  # A confine instance  may be initialized with with a logical check and
+  # resolves the check on demand to a `true` or `false` value.
+  class Confine
+    attr_accessor :fact, :values
+
+    # Create a new confine instance
+    #
+    # @param fact [Symbol] Name of the fact
+    # @param values [Array] One or more values to match against. They can be
+    #   any type that provides a `===` method.
+    # @param block [Proc] Alternatively a block can be supplied as a check.
+    #   The fact value will be passed as the argument to the block. If the
+    #   block returns true then the fact will be enabled, otherwise it will
+    #   be disabled.
+    def initialize(fact = nil, *values, &block)
+      raise ArgumentError, "The fact name must be provided" unless fact or block_given?
+      if values.empty? and not block_given?
+        raise ArgumentError, "One or more values or a block must be provided"
+      end
+      @fact = fact
+      @values = values
+      @block = block
+    end
+
+    def to_s
+      return @block.to_s if @block
+      return "'%s' '%s'" % [@fact, @values.join(",")]
+    end
+
+    # Convert a value to a canonical form
+    #
+    # This method is used by {true?} to normalize strings and symbol values
+    # prior to comparing them via `===`.
+    def normalize(value)
+      value = value.to_s if value.is_a?(Symbol)
+      value = value.downcase if value.is_a?(String)
+      value
+    end
+
+    # Evaluate the fact, returning true or false.
+    def true?
+      if @block and not @fact then
+        begin
+          return !! @block.call
+        rescue StandardError => error
+          # TODO: Replace with logger call.
+          $stderr.puts "Confine raised #{error.class} #{error}"
+          return false
+        end
+      end
+
+      unless fact = Facter[@fact]
+        # TODO: Replace with logger call.
+        $stderr.puts "No fact for %s" % @fact
+        return false
+      end
+      value = normalize(fact.value)
+
+      return false if value.nil?
+
+      if @block then
+        begin
+          return !! @block.call(value)
+        rescue StandardError => error
+          # TODO: Replace with logger call.
+          $stderr.puts "Confine raised #{error.class} #{error}"
+          return false
+        end
+      end
+
+      @values.any? { |v| normalize(v) === value }
+    end
+  end
+end
+end
+end
+
+
 module PuppetX
   module Puppetlabs
     # Collects diagnostic information about Puppet Enterprise for Support.
@@ -1498,6 +1586,7 @@ SSHKNOWNHOSTS
     end
   end
 end
+
 
 # The following allows this class to be executed as a standalone script.
 
