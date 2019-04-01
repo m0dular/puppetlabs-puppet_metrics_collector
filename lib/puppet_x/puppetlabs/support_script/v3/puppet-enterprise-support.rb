@@ -2,6 +2,12 @@
 
 require 'json'
 
+# Test nodes do not meet the minimum system requirements for tune to optimize.
+if ENV['BEAKER_TESTING']
+  ENV['TEST_CPU'] = '8'
+  ENV['TEST_RAM'] = '16384'
+end
+
 module PuppetX
   module Puppetlabs
     # Collects diagnostic information about Puppet Enterprise for Support.
@@ -40,6 +46,7 @@ module PuppetX
       end
 
       def run!
+        validate_operating_system
         validate_user
         validate_output_directory
         validate_output_directory_disk_space
@@ -122,7 +129,17 @@ module PuppetX
           'nginx/conf.d',
           'nginx/nginx.conf',
           'orchestration-services/bootstrap.cfg',
-          'orchestration-services/conf.d',
+          # NOTE: The PE Orchestrator stores encryption keys in its conf.d.
+          #       Therefore, we explicitly list what to gather.
+          'orchestration-services/conf.d/global.conf',
+          'orchestration-services/conf.d/metrics.conf',
+          'orchestration-services/conf.d/orchestrator.conf',
+          'orchestration-services/conf.d/web-routes.conf',
+          'orchestration-services/conf.d/webserver.conf',
+          'orchestration-services/conf.d/inventory.conf',
+          'orchestration-services/conf.d/auth.conf',
+          'orchestration-services/conf.d/pcp-broker.conf',
+          'orchestration-services/conf.d/analytics.conf',
           'orchestration-services/logback.xml',
           'orchestration-services/request-logging.xml',
           'puppet/auth.conf',
@@ -352,9 +369,9 @@ module PuppetX
         end
 
         # Collect Puppet Enterprise Infrastructure diagnostics.
-        exec_drop("#{@paths[:puppetlabs_bin]}/puppet-infrastructure status --format json",                 scope_directory, 'puppet_infra_status.json')
-        exec_drop("#{@paths[:puppetlabs_bin]}/puppet-infrastructure tune --color=false --debug",           scope_directory, 'puppet_infra_tune.txt')
-        exec_drop("#{@paths[:puppetlabs_bin]}/puppet-infrastructure tune --color=false --debug --current", scope_directory, 'puppet_infra_tune_current.txt')
+        exec_drop("#{@paths[:puppetlabs_bin]}/puppet-infrastructure status --format json", scope_directory, 'puppet_infra_status.json')
+        exec_drop("#{@paths[:puppetlabs_bin]}/puppet-infrastructure tune",                 scope_directory, 'puppet_infra_tune.txt')
+        exec_drop("#{@paths[:puppetlabs_bin]}/puppet-infrastructure tune --current",       scope_directory, 'puppet_infra_tune_current.txt')
 
         # Collect Puppet Enterprise Metrics.
         recreate_parent_path = false
@@ -525,6 +542,7 @@ module PuppetX
         exec_drop('uname -a',             scope_directory, 'uname.txt')
         exec_drop('uptime',               scope_directory, 'uptime.txt')
 
+
         pids = Array.new
         pids.push(exec_return_result('pgrep -f "puppetlabs/bolt-server"'))
         if(File.exists?('/var/run/puppetlabs/agent.pid'))
@@ -543,6 +561,12 @@ module PuppetX
           end
           data_drop(File.readlink("/proc/#{pid}/exe"), destpath, 'exe')
         end
+
+        puppet_enterprise_services_list.each do |service|
+          exec_drop("systemctl status #{service}", scope_directory, 'systemctl-status.txt') 
+          data_drop("=" * 100 + "\n", scope_directory, 'systemctl-status.txt')
+        end 
+
       end
 
       #=========================================================================
@@ -641,7 +665,7 @@ module PuppetX
 
       def copy_drop_match(src, dst, glob, recreate_parent_path = true)
         parents_option = recreate_parent_path ? ' --parents' : ''
-        command_line = %(find #{src} -type f -name #{glob} | xargs --no-run-if-empty cp --preserve #{parents_option} --target-directory #{dst})
+        command_line = %(find #{src} -type f -name "#{glob}" | xargs --no-run-if-empty cp --preserve #{parents_option} --target-directory #{dst})
         unless File.exist?(src)
           logline "copy_drop_match: source not found: #{src}"
           return false
@@ -673,6 +697,15 @@ module PuppetX
       #=========================================================================
       # Inspection
       #=========================================================================
+
+      # Validate the operating system, or exit.
+
+      def validate_operating_system
+        script_name = File.basename(__FILE__)
+        command = %(uname -s)
+        kernel_name = exec_return_result(command)
+        fail_and_exit("#{script_name} is limited to supported operating systems for master platorms") unless kernel_name == 'Linux'
+      end
 
       # Validate the runtime user, or exit.
 

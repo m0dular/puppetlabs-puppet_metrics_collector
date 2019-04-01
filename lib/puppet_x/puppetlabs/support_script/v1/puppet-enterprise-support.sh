@@ -19,6 +19,9 @@
 if [[ -n "${BEAKER_TESTING}" ]]; then
   # Enable command tracing and strict failures during tests.
   set -xeuo pipefail
+  # Test nodes do not meet the minimum system requirements for tune to optimize.
+  export TEST_CPU=8
+  export TEST_RAM=16384
 fi
 
 
@@ -878,6 +881,9 @@ list_all_services() {
     rhel|centos|sles|debian|ubuntu)
       if (pidof systemd &> /dev/null); then
         run_diagnostic "systemctl list-units" "system/services.txt"
+        for service in pe-puppetserver pe-bolt-server pe-console-services pe-nginx pe-orchestration-services pe-postgresql pe-puppetdb pe-puppetserver; do
+          { systemctl status "${service}" || true; printf '=%.0s' {1..100}; printf '\n'; } >> system/systemctl-status.txt
+        done
       else
         if cmd chkconfig; then
           run_diagnostic "chkconfig --list" "system/services.txt"
@@ -1125,7 +1131,17 @@ gather_enterprise_files() {
     'nginx/nginx.conf'
 
     'orchestration-services/bootstrap.cfg'
-    'orchestration-services/conf.d'
+    # NOTE: The PE Orchestrator stores encryption keys in its conf.d.
+    #       Therefore, we explicitly list what to gather.
+    'orchestration-services/conf.d/global.conf'
+    'orchestration-services/conf.d/metrics.conf'
+    'orchestration-services/conf.d/orchestrator.conf'
+    'orchestration-services/conf.d/web-routes.conf'
+    'orchestration-services/conf.d/webserver.conf'
+    'orchestration-services/conf.d/inventory.conf'
+    'orchestration-services/conf.d/auth.conf'
+    'orchestration-services/conf.d/pcp-broker.conf'
+    'orchestration-services/conf.d/analytics.conf'
     'orchestration-services/logback.xml'
     'orchestration-services/request-logging.xml'
 
@@ -1697,6 +1713,23 @@ pe_infra_status() {
   fi
 }
 
+# Gather infrastructure tuning
+#
+# Global Variables Used:
+#   None
+#
+# Arguments:
+#   None
+#
+# Returns:
+#   None
+pe_infra_tune() {
+  if [ -x /opt/puppetlabs/bin/puppet-infrastructure ]; then
+    run_diagnostic '/opt/puppetlabs/bin/puppet-infrastructure tune' 'enterprise/puppet_infra_tune.txt'
+    run_diagnostic '/opt/puppetlabs/bin/puppet-infrastructure tune --current' 'enterprise/puppet_infra_tune_current.txt'
+  fi
+}
+
 # Write metadata to a JSON file
 #
 # This function writes out a metadata file which contains information about
@@ -1919,6 +1952,11 @@ fi
 
 if is_package_installed 'pe-activemq'; then
   activemq_limits
+fi
+
+# Only on the Primary Master.
+if is_package_installed 'pe-puppetserver' && is_package_installed 'pe-installer' ; then
+  pe_infra_tune
 fi
 
 tar_change_directory=$(dirname "${DROP}")
