@@ -792,19 +792,37 @@ facter_checks() {
   rm "$DROP"/system/facter_output.txt
 }
 
+# Gather data from /proc for PE services
+#
+# Global Variables Used:
+#   DROP
+#
+# Arguments:
+#   None
+#
+# Returns:
+#   None
 get_proc_files() {
-  pidarray=()
+  local pidarray=()
+  local pidfile
+
   pidarray+=("$(pgrep -f "puppetlabs/bolt-server" || true)")
   if [ -e "/var/run/puppetlabs/agent.pid" ]; then
     pidarray+=("$(cat /var/run/puppetlabs/agent.pid)")
   fi
   pidarray+=("$(pidof pxp-agent)")
   for SERVICE in console-services orchestration-services puppetdb puppetserver; do
-    pidarray+=("$(cat /var/run/puppetlabs/"${SERVICE}"/"${SERVICE}".pid)")
+    pidfile="/var/run/puppetlabs/${SERVICE}/${SERVICE}.pid"
+    if [[ -e "${pidfile}" ]];then
+      pidarray+=("$(cat "${pidfile}")")
+    fi
   done
   for pid in "${pidarray[@]}"; do
-    ([[ "${pid}" =~ ^[0-9]+$ ]] && [[ -e /proc/"${pid}" ]]) || continue
-    destpath="${DROP}"/system/proc/"${pid}"
+    # NOTE: This is fine, we want to skip to continue if $pid is not a sequence
+    #       of digits and if there is no entry under proc for pid.
+    # shellcheck disable=SC2015
+    [[ "${pid}" =~ ^[0-9]+$ ]] && [[ -e /proc/"${pid}" ]] || continue
+    destpath="${DROP?}"/system/proc/"${pid}"
     mkdir -p "${destpath}"
     for FILE in cmdline limits environ; do
       cp /proc/"${pid}"/"${FILE}" "${destpath}"
