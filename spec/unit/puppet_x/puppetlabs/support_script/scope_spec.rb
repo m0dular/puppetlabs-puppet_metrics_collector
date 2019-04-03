@@ -51,43 +51,42 @@ describe PuppetX::Puppetlabs::SupportScript::Scope do
 
     describe 'when #run is called' do
       it 'skips Checks that do not return true for suitable?' do
-        allow_any_instance_of(scope1).to receive(:suitable?).and_return(true)
-        allow_any_instance_of(scope2).to receive(:suitable?).and_return(true)
-
-        allow_any_instance_of(check1).to receive(:suitable?).and_return(true)
         allow_any_instance_of(check2).to receive(:suitable?).and_return(false)
         allow_any_instance_of(check3).to receive(:suitable?).and_return(false)
-        allow_any_instance_of(check4).to receive(:suitable?).and_return(true)
 
-        expect_any_instance_of(check1).to receive(:run).and_return(nil)
         expect_any_instance_of(check2).not_to receive(:run)
         expect_any_instance_of(check3).not_to receive(:run)
-        expect_any_instance_of(check4).to receive(:run).and_return(nil)
 
         subject.new(name: 'test_scope').run
       end
 
       it 'skips Checks in Scopes that do not return true for suitable?' do
-        allow_any_instance_of(scope1).to receive(:suitable?).and_return(true)
         allow_any_instance_of(scope2).to receive(:suitable?).and_return(false)
 
-        allow_any_instance_of(check1).to receive(:suitable?).and_return(true)
-        allow_any_instance_of(check2).to receive(:suitable?).and_return(true)
-        allow_any_instance_of(check3).to receive(:suitable?).and_return(true)
+        expect_any_instance_of(check2).not_to receive(:run)
 
-        expect_any_instance_of(check1).to receive(:run).and_return(nil)
+        subject.new(name: 'test_scope').run
+      end
+
+      it 'skips Checks that do not return true for enabled?' do
+        allow_any_instance_of(check2).to receive(:enabled?).and_return(false)
+        allow_any_instance_of(check3).to receive(:enabled?).and_return(false)
+
+        expect_any_instance_of(check2).not_to receive(:run)
+        expect_any_instance_of(check3).not_to receive(:run)
+
+        subject.new(name: 'test_scope').run
+      end
+
+      it 'skips Checks in Scopes that do not return true for enabled?' do
+        allow_any_instance_of(scope2).to receive(:enabled?).and_return(false)
+
         expect_any_instance_of(check2).not_to receive(:run)
 
         subject.new(name: 'test_scope').run
       end
 
       it 'traps errors raised by children and continues' do
-        allow_any_instance_of(scope1).to receive(:suitable?).and_return(false)
-        allow_any_instance_of(scope2).to receive(:suitable?).and_return(false)
-
-        allow_any_instance_of(check3).to receive(:suitable?).and_return(true)
-        allow_any_instance_of(check4).to receive(:suitable?).and_return(true)
-
         # TODO: Add expectation for a message logged at error level.
         allow_any_instance_of(check3).to receive(:run).and_raise(RuntimeError,
                                                                  'boom!')

@@ -97,14 +97,19 @@ module SupportScript
   #
   # Including this module in another class allows instances of that class
   # to declare {Confine} instances which are then evaluated with a call to
-  # the {suitable?} method.
+  # the {suitable?} method. The module also provides a simple enable/disable
+  # switch that can be set by calling {#enabled=} and checked by calling
+  # {#enabled?}
   module Confinable
     # Initalizes object state used by the Confinable module
     #
     # This method should be called from the `initialize` method of any class
     # that includes the `Confinable` module.
+    #
+    # @return [void]
     def initialize_confinable
       @confines = []
+      @enabled = true
     end
 
     # Sets the conditions for this instance to be used.
@@ -177,9 +182,35 @@ module SupportScript
       end
     end
 
-    # Is this resolution mechanism suitable on the system in question?
+    # Check all conditions defined for the confined object
+    #
+    # Checks each condition defined through a call to {#confine}.
+    #
+    # @return [false] if any condition evaluates to `false`.
+    # @return [true] all conditions evalute to `true` or no conditions
+    #   were defined.
     def suitable?
       @confines.all? { |confine| confine.true? }
+    end
+
+    # Toggle the enabled status of the confined object
+    #
+    # @param value [true, false]
+    # @return [void]
+    def enabled=(value)
+      unless value.is_a?(TrueClass) || value.is_a?(FalseClass)
+        raise ArgumentError, 'The value of enabled must be set to true or false. Got a value of type %{class}.' %
+          {class: value.class}
+      end
+
+      @enabled=value
+    end
+
+    # Check the enabled status of the confined object
+    #
+    # @return [true, false]
+    def enabled?
+      @enabled
     end
   end
 
@@ -319,7 +350,7 @@ module SupportScript
     def run
       # TODO: Add logging to mark when run starts and finishes.
       @children.each do |child|
-        next unless child.suitable?
+        next unless child.enabled? && child.suitable?
         # TODO: Add logging to mark when child run starts and finishes.
         begin
           child.run

@@ -53,6 +53,10 @@ describe PuppetX::Puppetlabs::SupportScript::Confinable do
   end
 
   describe 'determining suitability' do
+    it 'defaults to suitable' do
+      expect(subject.suitable?).to be(true)
+    end
+
     it 'is true if all confines for the object evaluate to true' do
       subject.confine :kernel => 'Linux'
       subject.confine :operatingsystem => 'Redhat'
@@ -83,6 +87,24 @@ describe PuppetX::Puppetlabs::SupportScript::Confinable do
       allow(subject.confines.first).to receive(:true?).and_call_original
       allow(subject.confines.first).to receive(:true?).and_return(true)
       expect(subject).to be_suitable
+    end
+  end
+
+  describe 'determining enabled status' do
+    it 'defaults to enabled' do
+      expect(subject.enabled?).to be(true)
+    end
+
+    it 'can be disabled' do
+      subject.enabled = false
+
+      expect(subject.enabled?).to be(false)
+    end
+
+    it 'can only be set to true or false' do
+      expect { subject.enabled = nil }.to raise_error \
+        ArgumentError,
+        /must be set to true or false\. Got a value of type NilClass/
     end
   end
 end
