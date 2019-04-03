@@ -946,7 +946,7 @@ cgroup_data() {
               mkdir -p "${DROP}"/system/sys/fs/cgroup/"${FS}"/system.slice/"${SERVICE}".service
               # NOTE: Some "files" under the cgroup mount are write-only,
               #       so we just copy the readable ones.
-              find "/sys/fs/cgroup/${FS}/system.slice/${SERVICE}.service/" -type f -readable \
+              find "/sys/fs/cgroup/${FS}/system.slice/${SERVICE}.service/" -type f -perm /444 \
                 -exec cp -t "${DROP?}/system/sys/fs/cgroup/${FS}/system.slice/${SERVICE}.service/" {} +
             fi
           done
