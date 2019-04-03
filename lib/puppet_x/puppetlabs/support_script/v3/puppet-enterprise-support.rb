@@ -245,6 +245,104 @@ module SupportScript
       raise NotImplementedError, 'A subclass of Check must provide a run method.'
     end
   end
+
+  # Base class for grouping and managing diagnostics
+  #
+  # Instances of classes inheriting from `Scope` managage the configuration
+  # and execution of a setion of children, which can be {Check} objects or
+  # other `Scope` objects. Subclasses may define a {#setup} method that can use
+  # {Confinable#confine} to constrain when the scope executes.
+  class Scope
+    include Confinable
+
+    # Data for initializing children
+    #
+    # @return [Array<Array(Class, Hash)>]
+    def self.child_specs
+      @child_specs ||= []
+    end
+
+    # Add a child to be initialized by instances of this scope
+    #
+    # @param [Class] klass the class from which the child should be
+    #   initialized.
+    # @param [Hash] options a hash of options to pass when initializing
+    #   the child.
+    # @return [void]
+    def self.add_child(klass, **options)
+      child_specs.push([klass, options])
+    end
+
+    # Initialize a new scope
+    #
+    # @note This method should not be overriden by child classes. Override
+    #   the #{setup} method instead.
+    # @return [void]
+    def initialize(parent = nil, **options)
+      initialize_confinable
+      @parent = parent
+      @name = options[:name]
+
+      initialize_children
+      setup(**options)
+
+      if @name.nil?
+        raise ArgumentError, '%{class} must be initialized with a name: parameter.' %
+          {class: self.class.name}
+      end
+    end
+
+    # Return a string representing the name of this scope
+    #
+    # If initialized with a parent object, the return value of calling
+    # `name` on the parent is pre-pended as a namespace.
+    #
+    # @return [String]
+    def name
+      return @resolved_name if defined?(@resolved_name)
+
+      @resolved_name = if @parent.nil? || @parent.name.empty?
+                         @name
+                       else
+                         [@parent.name, @name].join('::')
+                       end
+
+      @resolved_name.freeze
+    end
+
+    # Execute run logic for suitable children
+    #
+    # This method loops over all child instances and calls `run` on each
+    # instance for which {Confinable#suitable?} returns `true`.
+    #
+    # @return [void]
+    def run
+      # TODO: Add logging to mark when run starts and finishes.
+      @children.each do |child|
+        next unless child.suitable?
+        # TODO: Add logging to mark when child run starts and finishes.
+        begin
+          child.run
+        rescue => e
+          # TODO: Log errors.
+        end
+      end
+    end
+
+    # Initialize variables and logic used by the scope
+    #
+    # @param [Hash] options a hash of configuration options that can be used
+    #   to initialize the scope.
+    # @return [void]
+    def setup(**options)
+    end
+
+    private
+
+    def initialize_children
+      @children = self.class.child_specs.map {|(klass, opts)| klass.new(self, **opts)}
+    end
+  end
 end
 end
 end
