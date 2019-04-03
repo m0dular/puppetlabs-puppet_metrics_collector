@@ -542,6 +542,11 @@ module PuppetX
         exec_drop('uname -a',             scope_directory, 'uname.txt')
         exec_drop('uptime',               scope_directory, 'uptime.txt')
 
+        puppet_enterprise_services_list.each do |service|
+          ['memory','cpu','blkio','devices','pids','systemd'].each do |fs|
+            copy_drop_match("/sys/fs/cgroup/#{fs}/system.slice/#{service}.service/", scope_directory, '*')
+          end
+        end
 
         pids = Array.new
         pids.push(exec_return_result('pgrep -f "puppetlabs/bolt-server"'))
@@ -566,7 +571,6 @@ module PuppetX
           exec_drop("systemctl status #{service}", scope_directory, 'systemctl-status.txt') 
           data_drop("=" * 100 + "\n", scope_directory, 'systemctl-status.txt')
         end 
-
       end
 
       #=========================================================================

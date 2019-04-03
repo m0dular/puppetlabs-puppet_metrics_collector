@@ -914,6 +914,35 @@ list_all_services() {
   esac
 }
 
+cgroup_data() {
+  case "${PLATFORM_NAME?}" in
+    rhel|centos|sles|debian|ubuntu)
+      if (pidof systemd &> /dev/null); then
+        for FS in memory \
+          cpu \
+          devices \
+          pids \
+          systemd \
+          blkio; do
+          for SERVICE in pe-console-services \
+            pe-nginx \
+            pe-orchestration-services \
+            pe-postgresql \
+            pe-puppetdb \
+            pe-puppetserver \
+            pe-bolt-server \
+            pe-orchestration-services; do
+            if [ -d /sys/fs/cgroup/"${FS}"/system.slice/"${SERVICE}".service ]; then
+              mkdir -p "${DROP}"/system/sys/fs/cgroup/"${FS}"/system.slice/"${SERVICE}".service
+              cp /sys/fs/cgroup/"${FS}"/system.slice/"${SERVICE}".service/* "${DROP}"/system/sys/fs/cgroup/"${FS}"/system.slice/"${SERVICE}".service 2>/dev/null
+            fi
+          done
+        done
+      fi
+    ;;
+  esac
+}
+
 grab_env_vars() {
   run_diagnostic "env" "system/env.txt"
 }
@@ -1927,6 +1956,7 @@ pe_metrics
 get_state
 other_logs
 ifconfig_output
+cgroup_data
 get_proc_files
 
 if is_package_installed 'pe-puppetserver'; then
