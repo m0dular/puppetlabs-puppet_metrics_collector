@@ -914,6 +914,16 @@ list_all_services() {
   esac
 }
 
+# Gather data from /proc for PE services
+#
+# Global Variables Used:
+#   DROP
+#
+# Arguments:
+#   None
+#
+# Returns:
+#   None
 cgroup_data() {
   case "${PLATFORM_NAME?}" in
     rhel|centos|sles|debian|ubuntu)
@@ -934,7 +944,10 @@ cgroup_data() {
             pe-orchestration-services; do
             if [ -d /sys/fs/cgroup/"${FS}"/system.slice/"${SERVICE}".service ]; then
               mkdir -p "${DROP}"/system/sys/fs/cgroup/"${FS}"/system.slice/"${SERVICE}".service
-              cp /sys/fs/cgroup/"${FS}"/system.slice/"${SERVICE}".service/* "${DROP}"/system/sys/fs/cgroup/"${FS}"/system.slice/"${SERVICE}".service 2>/dev/null
+              # NOTE: Some "files" under the cgroup mount are write-only,
+              #       so we just copy the readable ones.
+              find "/sys/fs/cgroup/${FS}/system.slice/${SERVICE}.service/" -type f -readable \
+                -exec cp -t "${DROP?}/system/sys/fs/cgroup/${FS}/system.slice/${SERVICE}.service/" {} +
             fi
           done
         done
