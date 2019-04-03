@@ -182,6 +182,69 @@ module SupportScript
       @confines.all? { |confine| confine.true? }
     end
   end
+
+  # Base class for diagnostic logic
+  #
+  # Instances of classes inheriting from `Check` represent diagnostics to
+  # be executed. Subclasses may define a {#setup} method that can use
+  # {Confinable#confine} to constrain when checks are executed. All subclasses
+  # must define a {#run} method that executes the diagnostic.
+  #
+  # @abstract
+  class Check
+    include Confinable
+
+    # Initialize a new check
+    #
+    # @note This method should not be overriden by child classes. Override
+    #   the #{setup} method instead.
+    # @return [void]
+    def initialize(parent = nil, **options)
+      initialize_confinable
+      @parent = parent
+      @name = options[:name]
+
+      setup(**options)
+
+      if @name.nil?
+        raise ArgumentError, '%{class} must be initialized with a name: parameter.' %
+          {class: self.class.name}
+      end
+    end
+
+    # Return a string representing the name of this check
+    #
+    # If initialized with a parent object, the return value of calling
+    # `name` on the parent is pre-pended as a namespace.
+    #
+    # @return [String]
+    def name
+      return @resolved_name if defined?(@resolved_name)
+
+      @resolved_name = if @parent.nil? || @parent.name.empty?
+                         @name
+                       else
+                         [@parent.name, @name].join('::')
+                       end
+
+      @resolved_name.freeze
+    end
+
+    # Initialize variables and logic used by the check
+    #
+    # @param [Hash] options a hash of configuration options that can be used
+    #   to initialize the check.
+    # @return [void]
+    def setup(**options)
+    end
+
+    # Execute the diagnostic represented by the check
+    #
+    # @return [void]
+    def run
+      raise NotImplementedError, 'A subclass of Check must provide a run method.'
+    end
+  end
 end
 end
 end
