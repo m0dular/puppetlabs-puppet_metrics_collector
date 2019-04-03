@@ -92,6 +92,96 @@ module SupportScript
       @values.any? { |v| normalize(v) === value }
     end
   end
+
+  # Mix-in module for declaring and evaluating confines
+  #
+  # Including this module in another class allows instances of that class
+  # to declare {Confine} instances which are then evaluated with a call to
+  # the {suitable?} method.
+  module Confinable
+    # Initalizes object state used by the Confinable module
+    #
+    # This method should be called from the `initialize` method of any class
+    # that includes the `Confinable` module.
+    def initialize_confinable
+      @confines = []
+    end
+
+    # Sets the conditions for this instance to be used.
+    #
+    # This method accepts multiple forms of arguments. Each call to this method
+    # adds a new {Confine} instance that must pass in order for {suitable?} to
+    # return `true`.
+    #
+    # @return [void]
+    #
+    # @overload confine(confines)
+    #   Confine a fact to a specific fact value or values. This form takes a
+    #   hash of fact names and values. Every fact must match the values given
+    #   for that fact, otherwise this resolution will not be considered
+    #   suitable. The values given for a fact can be an array, in which case
+    #   the value of the fact must be in the array for it to match.
+    #
+    #   @param [Hash{String,Symbol=>String,Array<String>}] confines set of facts
+    #     identified by the hash keys whose fact value must match the
+    #     argument value.
+    #
+    #   @example Confining to a single value
+    #       confine :kernel => 'Linux'
+    #
+    #   @example Confining to multiple values
+    #       confine :osfamily => ['RedHat', 'SuSE']
+    #
+    # @overload confine(confines, &block)
+    #   Confine to logic in a block with the value of a specified fact yielded
+    #   to the block.
+    #
+    #   @param [String,Symbol] confines the fact name whose value should be
+    #     yielded to the block
+    #   @param [Proc] block determines suitability. If the block evaluates to
+    #     `false` or `nil` then the confined object will not be evaluated.
+    #
+    #   @yield [value] the value of the fact identified by `confines`
+    #
+    #   @example Confine to a host with an ipaddress in a specific subnet
+    #       confine :ipaddress do |addr|
+    #         require 'ipaddr'
+    #         IPAddr.new('192.168.0.0/16').include? addr
+    #       end
+    #
+    # @overload confine(&block)
+    #   Confine to a block. The object will be evaluated only if the block
+    #   evaluates to something other than `false` or `nil`.
+    #
+    #   @param [Proc] block determines suitability. If the block
+    #     evaluates to `false` or `nil` then the confined object will not be
+    #     evaluated.
+    #
+    #   @example Confine to systems with a specific file
+    #       confine { File.exist? '/bin/foo' }
+    def confine(confines = nil, &block)
+      case confines
+      when Hash
+        confines.each do |fact, values|
+          @confines.push Confine.new(fact, *values)
+        end
+      else
+        if block
+          if confines
+            @confines.push Confine.new(confines, &block)
+          else
+            @confines.push Confine.new(&block)
+          end
+        else
+        end
+      end
+    end
+
+    # Is this resolution mechanism suitable on the system in question?
+    def suitable?
+      @confines.all? { |confine| confine.true? }
+    end
+  end
 end
 end
 end
