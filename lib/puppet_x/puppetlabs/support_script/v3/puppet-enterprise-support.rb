@@ -2,6 +2,7 @@
 
 require 'json'
 require 'tempfile'
+require 'forwardable'
 
 # Test nodes do not meet the minimum system requirements for tune to optimize.
 if ENV['BEAKER_TESTING']
@@ -17,6 +18,60 @@ module Puppetlabs
 # This module contains components for running diagnostic checks on Puppet
 # Enterprise installations.
 module SupportScript
+  # Holds configuration and state shared by other objects
+  #
+  # Classes that need access to state managed by the Settings class should
+  # include the {Configable} module, which provides access to a singleton
+  # instance shared by all objects.
+  class Settings
+    attr_accessor :settings
+
+    def self.instance
+      @instance ||= new
+    end
+
+    def initialize
+      @settings = {enable: [],
+                   disable: [],
+                   only: []}
+    end
+
+    # Update configuration of the settings object
+    #
+    # @param options [Hash] a hash of options to merge into the existing
+    #   configuration.
+    def configure(**options)
+      options.each do |key, value|
+        case key
+        when :enable, :disable, :only
+          unless value.is_a?(Array)
+            raise ArgumentError, 'The %{key} option must be set to an Array value. Got a value of type %{class}.' %
+              {key: key,
+               class: value.class}
+          end
+        end
+
+        @settings[key] = value
+      end
+    end
+  end
+
+  # Mix-in module for accessing shared settings and state
+  #
+  # Including the `Configable` module in a class provides access to a shared
+  # state object returned by {Settings.instance}. Including the `Configable`
+  # module also defines helper methods to access various components of the
+  # `Settings` instance as if they were local instance variables.
+  module Configable
+    extend Forwardable
+
+    def_delegators :@config, :settings
+
+    def initialize_configable
+      @config = Settings.instance
+    end
+  end
+
   # A restricting tag for diagnostics
   #
   # A confine instance  may be initialized with with a logical check and
@@ -284,6 +339,7 @@ module SupportScript
   # other `Scope` objects. Subclasses may define a {#setup} method that can use
   # {Confinable#confine} to constrain when the scope executes.
   class Scope
+    include Configable
     include Confinable
 
     # Data for initializing children
@@ -310,17 +366,18 @@ module SupportScript
     #   the #{setup} method instead.
     # @return [void]
     def initialize(parent = nil, **options)
+      initialize_configable
       initialize_confinable
       @parent = parent
       @name = options[:name]
 
-      initialize_children
       setup(**options)
-
       if @name.nil?
         raise ArgumentError, '%{class} must be initialized with a name: parameter.' %
           {class: self.class.name}
       end
+
+      initialize_children
     end
 
     # Return a string representing the name of this scope
@@ -371,7 +428,32 @@ module SupportScript
     private
 
     def initialize_children
-      @children = self.class.child_specs.map {|(klass, opts)| klass.new(self, **opts)}
+      enable_list = (settings[:only] + settings[:enable]).select {|e| e.start_with?(name)}
+
+      @children = self.class.child_specs.map do |(klass, opts)|
+        child = klass.new(self, **opts)
+        child.enabled = false if (not self.enabled?)
+
+        if (not settings[:only].empty?) && child.enabled?
+          # Disable children unless they are explicitly enabled, or one of
+          # their parents is explicitly enabled.
+          child.enabled = false unless enable_list.any? {|e| child.name.start_with?(e)}
+        end
+
+        if (klass < Scope)
+          # Enable Scopes if they are explicitly enabled, or one of their
+          # children is explicitly enabled.
+          child.enabled = enable_list.any? {|e| e.start_with?(child.name)}
+        elsif (klass < Check)
+          # Enable Checks if they are explicitly enabled.
+          child.enabled = true if enable_list.include?(child.name)
+        end
+
+        # Disable anything explicitly listed.
+        child.enabled = false if settings[:disable].include?(child.name)
+
+        child
+      end
     end
   end
 end

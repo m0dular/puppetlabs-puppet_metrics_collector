@@ -94,6 +94,97 @@ describe PuppetX::Puppetlabs::SupportScript::Scope do
 
         subject.new(name: 'test_scope').run
       end
+
+      context 'when children are enabled or disabled by settings' do
+        include_context 'stub script settings'
+
+        it 'only runs checks that match the :only settings' do
+          script_settings.configure(only: ['test_scope::scope_1',
+                                           'test_scope::check_3'])
+
+          expect_any_instance_of(check1).to receive(:run)
+          expect_any_instance_of(check2).not_to receive(:run)
+          expect_any_instance_of(check3).to receive(:run)
+          expect_any_instance_of(check4).not_to receive(:run)
+
+          subject.new(name: 'test_scope').run
+        end
+
+        it 'does not enable disabled checks unless explicitly listed in :only' do
+          script_settings.configure(only: ['test_scope::scope_1',
+                                           'test_scope::scope_2::check_2'])
+
+          [check1, check2].each do |klass|
+            klass.class_eval do
+              def setup(**options)
+                @enabled = false
+              end
+            end
+          end
+
+          expect_any_instance_of(check1).not_to receive(:run)
+
+          subject.new(name: 'test_scope').run
+        end
+
+        it 'enables disabled checks if listed in :enable' do
+          script_settings.configure(enable: ['test_scope::scope_1::check_1',
+                                             'test_scope::check_3'])
+
+          [scope1, check3].each do |klass|
+            klass.class_eval do
+              def setup(**options)
+                @enabled = false
+              end
+            end
+          end
+
+          expect_any_instance_of(check1).to receive(:run)
+          expect_any_instance_of(check3).to receive(:run)
+
+          subject.new(name: 'test_scope').run
+        end
+
+        it 'does not apply :enable to siblings of a disabled scope' do
+          check5 = Class.new(check_class)
+
+          scope1.add_child(check5, name: 'check_5')
+          scope1.class_eval do
+            def setup(**options)
+              @enabled = false
+            end
+          end
+
+          script_settings.configure(enable: ['test_scope::scope_1::check_1'])
+
+          expect_any_instance_of(check1).to receive(:run)
+          expect_any_instance_of(check5).not_to receive(:run)
+
+          subject.new(name: 'test_scope').run
+        end
+
+        it 'combines the effects of :only and :enable' do
+          script_settings.configure(only: ['test_scope::scope_1'],
+                                    enable: ['test_scope::scope_2::check_2'])
+
+          expect_any_instance_of(check1).to receive(:run)
+          expect_any_instance_of(check2).to receive(:run)
+
+          subject.new(name: 'test_scope').run
+        end
+
+        it 'combines the effects of :only, :enable, and :disable' do
+          script_settings.configure(only: ['test_scope::scope_1'],
+                                    enable: ['test_scope::scope_2::check_2'],
+                                    disable: ['test_scope::scope_1::check_1',
+                                              'test_scope::scope_2'])
+
+          expect_any_instance_of(check1).not_to receive(:run)
+          expect_any_instance_of(check2).not_to receive(:run)
+
+          subject.new(name: 'test_scope').run
+        end
+      end
     end
   end
 end
