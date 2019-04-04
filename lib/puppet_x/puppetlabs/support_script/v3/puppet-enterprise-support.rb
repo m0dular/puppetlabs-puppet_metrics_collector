@@ -556,7 +556,10 @@ module PuppetX
         pids.push(exec_return_result('pidof pxp-agent'))
 
         ['console-services','orchestration-services','puppetdb','puppetserver'].each do |service|
-          pids.push(File.read("/var/run/puppetlabs/#{service}/#{service}.pid").chomp!)
+          pidfile = "/var/run/puppetlabs/#{service}/#{service}.pid"
+          if File.readable?(pidfile)
+            pids.push(File.read(pidfile).chomp!)
+          end
         end
         pids.each do |pid|
           next unless ( pid.match?(/^\d+$/) && Dir.exists?("/proc/#{pid}") )
