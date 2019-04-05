@@ -571,9 +571,9 @@ module PuppetX
         end
 
         puppet_enterprise_services_list.each do |service|
-          exec_drop("systemctl status #{service}", scope_directory, 'systemctl-status.txt') 
+          exec_drop("systemctl status #{service}", scope_directory, 'systemctl-status.txt')
           data_drop("=" * 100 + "\n", scope_directory, 'systemctl-status.txt')
-        end 
+        end
       end
 
       #=========================================================================
@@ -770,17 +770,16 @@ module PuppetX
       def query_platform
         os = Facter.value('os')
         @platform[:name]     = os['name'].downcase
-        @platform[:release]  = os['release']['major'] + os['release']['minor']
+        @platform[:release]  = os['release']['full']
         @platform[:hostname] = Facter.value('hostname').downcase
         @platform[:fqdn]     = Facter.value('fqdn').downcase
         case @platform[:name]
-        when 'amazon', 'aix', 'centos', 'eos', 'fedora', 'rhel', 'sles'
+        when 'amazon', 'aix', 'centos', 'eos', 'fedora', 'redhat', 'rhel', 'sles'
           @platform[:packaging] = 'rpm'
         when 'debian', 'cumulus', 'ubuntu'
           @platform[:packaging] = 'dpkg'
         else
           @platform[:packaging] = ''
-          logline "query_platform: unknown packaging system for platform: #{@platform[:name]}"
           display_warning("Unknown packaging system for platform: #{@platform[:name]}")
         end
       end
@@ -1101,7 +1100,13 @@ module PuppetX
         tar_change_directory = File.dirname(@drop_directory)
         tar_directory = File.basename(@drop_directory)
         output_archive = "#{@drop_directory}.tar.gz"
-        exec_or_fail(%(umask 0077 && tar --create --file - --directory "#{tar_change_directory}" "#{tar_directory}" | gzip --force -9 > "#{output_archive}"))
+        old_umask = File.umask
+        begin
+          File.umask(0077)
+          exec_or_fail(%(tar --create --file - --directory "#{tar_change_directory}" "#{tar_directory}" | gzip --force -9 > "#{output_archive}"))
+        ensure
+          File.umask(old_umask)
+        end
         delete_drop_directory
         if @options[:encrypt]
           gpg_command = executable?('gpg') ? 'gpg' : nil
@@ -1190,9 +1195,9 @@ module PuppetX
       def exec_return_result(command_line, timeout = 0)
         options = { timeout: timeout }
         Facter::Core::Execution.execute(command_line, options)
-      rescue Facter::Core::Execution::ExecutionFailure
-        logline "error: exec_return_result: command failed: #{command_line}"
-        display "    Command failed: #{command_line}"
+      rescue Facter::Core::Execution::ExecutionFailure => e
+        logline "error: exec_return_result: command failed: #{command_line} with error: #{e}"
+        display "    Command failed: #{command_line} with error: #{e}"
         display
         ''
       end
@@ -1203,9 +1208,9 @@ module PuppetX
         options = { timeout: timeout }
         Facter::Core::Execution.execute(command_line, options)
         $?.to_i.zero?
-      rescue Facter::Core::Execution::ExecutionFailure
-        logline "error: exec_return_status: command failed: #{command_line}"
-        display "    Command failed: #{command_line}"
+      rescue Facter::Core::Execution::ExecutionFailure => e
+        logline "error: exec_return_status: command failed: #{command_line} with error: #{e}"
+        display "    Command failed: #{command_line} with error: #{e}"
         display
         false
       end
@@ -1219,9 +1224,9 @@ module PuppetX
         unless $?.to_i.zero?
           raise Facter::Core::Execution::ExecutionFailure, $?
         end
-      rescue Facter::Core::Execution::ExecutionFailure
-        logline "error: exec_or_fail: command failed: #{command_line}"
-        fail_and_exit("Command failed: #{command_line}")
+      rescue Facter::Core::Execution::ExecutionFailure => e
+        logline "error: exec_or_fail: command failed: #{command_line} with error: #{e}"
+        fail_and_exit("Command failed: #{command_line} with error: #{e}")
       end
 
       # Test for command existance.
