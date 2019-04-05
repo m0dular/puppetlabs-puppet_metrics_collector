@@ -824,7 +824,7 @@ module PuppetX
         when 'rpm'
           status = exec_return_result(%(rpm --query --info #{package})) =~ %r{Version}
         when 'dpkg'
-          status = exec_return_result(%(dpkg-query  --show #{package})) =~ %r{Version}
+          status = exec_return_status(%(dpkg-query  --show #{package}))
         else
           logline "package_installed: unable to query package for platform: #{@platform[:name]}"
           display_warning("Unable to query package for platform: #{@platform[:name]}")
