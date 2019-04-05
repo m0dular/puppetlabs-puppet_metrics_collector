@@ -312,7 +312,7 @@ module PuppetX
           # Scope Redirect: This drops into etc instead of enterprise.
           copy_drop("#{environment_directory}/environment.conf", @drop_directory)
           copy_drop("#{environment_directory}/hiera.yaml",       @drop_directory)
-        end
+        end unless puppetserver_environments.empty?
 
         # Collect Puppet Enterprise Classifier groups.
         if @options[:classifier]
