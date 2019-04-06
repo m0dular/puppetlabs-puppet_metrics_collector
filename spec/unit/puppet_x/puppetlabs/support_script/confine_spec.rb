@@ -3,6 +3,8 @@
 require 'spec_helper'
 
 describe PuppetX::Puppetlabs::SupportScript::Confine do
+  include_context 'stub script settings'
+
   it 'should require a fact name' do
     expect(described_class.new('yay', true).fact).to eq('yay')
   end
@@ -40,6 +42,7 @@ describe PuppetX::Puppetlabs::SupportScript::Confine do
 
     it 'should return false if the fact does not exist' do
       expect(::Facter).to receive(:[]).with('yay').and_return(nil)
+      expect(script_logger).to receive(:warn).and_call_original
 
       expect(described_class.new('yay', 'test').true?).to be(false)
     end
@@ -132,12 +135,14 @@ describe PuppetX::Puppetlabs::SupportScript::Confine do
     end
 
     it 'should return false if the block raises a StandardError' do
+      expect(script_logger).to receive(:error).and_call_original
       expect(described_class.new { raise StandardError }.true?).to be(false)
     end
 
     it 'should return false if the block raises a StandardError when checking a fact' do
       allow(@fact).to receive(:value).and_return('foo')
       confine = described_class.new(:yay) { |f| raise StandardError }
+      expect(script_logger).to receive(:error).and_call_original
       expect(confine.true?).to be(false)
     end
   end

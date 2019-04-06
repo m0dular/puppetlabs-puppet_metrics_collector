@@ -1,6 +1,8 @@
 require 'spec_helper'
 
 describe PuppetX::Puppetlabs::SupportScript::Scope do
+  include_context 'stub script settings'
+
   context 'when initializing' do
     it 'requires a name to be passed' do
       expect { described_class.new }.to raise_error(ArgumentError,
@@ -87,17 +89,17 @@ describe PuppetX::Puppetlabs::SupportScript::Scope do
       end
 
       it 'traps errors raised by children and continues' do
-        # TODO: Add expectation for a message logged at error level.
         allow_any_instance_of(check3).to receive(:run).and_raise(RuntimeError,
                                                                  'boom!')
         expect_any_instance_of(check4).to receive(:run).and_return(nil)
+        expect(script_logger).to receive(:error).and_call_original
 
         subject.new(name: 'test_scope').run
+
+        expect(script_log.string).to match(/RuntimeError raised during test_scope::check_3/)
       end
 
       context 'when children are enabled or disabled by settings' do
-        include_context 'stub script settings'
-
         it 'only runs checks that match the :only settings' do
           script_settings.configure(only: ['test_scope::scope_1',
                                            'test_scope::check_3'])

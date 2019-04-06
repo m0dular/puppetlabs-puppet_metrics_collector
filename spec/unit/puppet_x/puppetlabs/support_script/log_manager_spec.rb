@@ -1,5 +1,4 @@
 require 'spec_helper'
-require 'stringio'
 
 describe PuppetX::Puppetlabs::SupportScript::LogManager do
   it 'only accepts children of class logger' do

@@ -81,6 +81,7 @@ module SupportScript
   # include the {Configable} module, which provides access to a singleton
   # instance shared by all objects.
   class Settings
+    attr_reader :log
     attr_accessor :settings
 
     def self.instance
@@ -88,6 +89,7 @@ module SupportScript
     end
 
     def initialize
+      @log = LogManager.new
       @settings = {enable: [],
                    disable: [],
                    only: []}
@@ -122,6 +124,7 @@ module SupportScript
   module Configable
     extend Forwardable
 
+    def_delegators :@config, :log
     def_delegators :@config, :settings
 
     def initialize_configable
@@ -134,6 +137,8 @@ module SupportScript
   # A confine instance  may be initialized with with a logical check and
   # resolves the check on demand to a `true` or `false` value.
   class Confine
+    include Configable
+
     attr_accessor :fact, :values
 
     # Create a new confine instance
@@ -146,10 +151,13 @@ module SupportScript
     #   block returns true then the fact will be enabled, otherwise it will
     #   be disabled.
     def initialize(fact = nil, *values, &block)
+      initialize_configable
+
       raise ArgumentError, "The fact name must be provided" unless fact or block_given?
       if values.empty? and not block_given?
         raise ArgumentError, "One or more values or a block must be provided"
       end
+
       @fact = fact
       @values = values
       @block = block
@@ -175,16 +183,18 @@ module SupportScript
       if @block and not @fact then
         begin
           return !! @block.call
-        rescue StandardError => error
-          # TODO: Replace with logger call.
-          $stderr.puts "Confine raised #{error.class} #{error}"
+        rescue StandardError => e
+          log.error("%{exception_class} raised during Confine: %{message}\n\t%{backtrace}" %
+                    {exception_class: e.class,
+                     message: e.message,
+                     backtrace: e.backtrace.join("\n\t")})
           return false
         end
       end
 
       unless fact = Facter[@fact]
-        # TODO: Replace with logger call.
-        $stderr.puts "No fact for %s" % @fact
+        log.warn('Confine requested undefined fact named: %{fact}' %
+                 {fact: @fact})
         return false
       end
       value = normalize(fact.value)
@@ -194,9 +204,11 @@ module SupportScript
       if @block then
         begin
           return !! @block.call(value)
-        rescue StandardError => error
-          # TODO: Replace with logger call.
-          $stderr.puts "Confine raised #{error.class} #{error}"
+        rescue StandardError => e
+          log.error("%{exception_class} raised during Confine: %{message}\n\t%{backtrace}" %
+                    {exception_class: e.class,
+                     message: e.message,
+                     backtrace: e.backtrace.join("\n\t")})
           return false
         end
       end
@@ -335,6 +347,7 @@ module SupportScript
   #
   # @abstract
   class Check
+    include Configable
     include Confinable
 
     # Initialize a new check
@@ -343,6 +356,7 @@ module SupportScript
     #   the #{setup} method instead.
     # @return [void]
     def initialize(parent = nil, **options)
+      initialize_configable
       initialize_confinable
       @parent = parent
       @name = options[:name]
@@ -462,15 +476,23 @@ module SupportScript
     #
     # @return [void]
     def run
-      # TODO: Add logging to mark when run starts and finishes.
       @children.each do |child|
         next unless child.enabled? && child.suitable?
-        # TODO: Add logging to mark when child run starts and finishes.
+        log.info('starting evaluation of %{name}' %
+                 {name: child.name})
+
         begin
           child.run
         rescue => e
-          # TODO: Log errors.
+          log.error("%{exception_class} raised during %{name}: %{message}\n\t%{backtrace}" %
+                    {exception_class: e.class,
+                     name: child.name,
+                     message: e.message,
+                     backtrace: e.backtrace.join("\n\t")})
         end
+        # TODO: Include elapsed time measured using Process::CLOCK_MONOTONIC
+        log.debug('finished evaluation of %{name}' %
+                  {name: child.name})
       end
     end
 
