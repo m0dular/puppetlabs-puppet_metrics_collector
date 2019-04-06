@@ -3,6 +3,7 @@
 require 'json'
 require 'tempfile'
 require 'forwardable'
+require 'logger'
 
 # Test nodes do not meet the minimum system requirements for tune to optimize.
 if ENV['BEAKER_TESTING']
@@ -18,6 +19,62 @@ module Puppetlabs
 # This module contains components for running diagnostic checks on Puppet
 # Enterprise installations.
 module SupportScript
+  # Manages one or more Logger instances
+  #
+  # Instances of this class wrap one or more instances of Logger and direct
+  # logged messages to each as appropriate. Instances of this class provide
+  # a method for each level in the stdlib `Logger::Severity` module, usually:
+  #
+  #   - `debug`
+  #   - `info`
+  #   - `warn`
+  #   - `error`
+  #   - `fatal`
+  #   - `unknown`
+  class LogManager
+    def initialize
+      @loggers = []
+    end
+
+    # Add a Logger instance to this manager
+    #
+    # @param logger [Logger] The logger to add.
+    # @return [void]
+    def add_logger(logger)
+      unless logger.is_a?(::Logger)
+        raise ArgumentError, 'An instance of Logger must be passed. Got a value of type %{class}.' %
+          {class: logger.class}
+      end
+
+      @loggers.push(logger)
+    end
+
+    # Remove a Logger instance from this manager
+    #
+    # @param logger [Logger] The logger to add.
+    # @return [void]
+    def remove_logger(logger)
+      @loggers.delete(logger)
+    end
+
+    ::Logger::Severity.constants.each do |name|
+      method_name = name.to_s.downcase.to_sym
+      level = ::Logger::Severity.const_get(name)
+
+      define_method(method_name) do |message = nil, &block|
+        # If a block was passed, ignore the message.
+        message = nil unless block.nil?
+
+        @loggers.each do |logger|
+          next unless logger.level <= level
+          message ||= block.call unless block.nil?
+
+          logger.send(method_name, message)
+        end
+      end
+    end
+  end
+
   # Holds configuration and state shared by other objects
   #
   # Classes that need access to state managed by the Settings class should
