@@ -1131,7 +1131,7 @@ module PuppetX
         ssh_kex_algorithms = 'KexAlgorithms=diffie-hellman-group-exchange-sha256'
         ssh_macs           = 'MACs=hmac-sha2-512,hmac-sha2-256'
         ssh_options        = %(-o "#{ssh_ciphers}" -o "#{ssh_kex_algorithms}" -o "#{ssh_macs}" -o "Protocol=2" -o "ConnectTimeout=16"  #{ssh_known_hosts} -o "#{ssh_identity}" -o "BatchMode=yes")
-        sftp_command = %(sftp #{ssh_options} #{sftp_url} <<< $'put #{@output_archive}' 2>&1)
+        sftp_command       = %(echo 'put #{@output_archive}' | sftp #{ssh_options} #{sftp_url} 2>&1)
 
         begin
           sftp_output = Facter::Core::Execution.execute(sftp_command)
