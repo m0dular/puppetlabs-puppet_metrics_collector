@@ -558,7 +558,7 @@ run_diagnostic() {
   if is_noop; then
     return 0
   elif [[ -n "${user}" ]]; then
-    ( eval "${prefix_command:-}su - ${user} -s ${SHELL} -c \"${t_run_diagnostic__command//\"/\\\"}\" 2>&1" ) >> "${t_run_diagnostic__outfile}"
+    ( eval "${prefix_command:-}su ${user} -s ${SHELL} -c \"${t_run_diagnostic__command//\"/\\\"}\" 2>&1" ) >> "${t_run_diagnostic__outfile}"
     return $?
   else
     ( eval "${prefix_command:-}${t_run_diagnostic__command?} 2>&1" ) >> "${t_run_diagnostic__outfile}"
@@ -697,7 +697,7 @@ ifconfig_output() {
 #===[Resource checks]===========================================================
 
 get_all_database_names() {
-  printf '%s' "$(su - pe-postgres -s "${SHELL}" -c "${SERVER_BIN_DIR?}/psql -t -c 'select datname from pg_catalog.pg_database;'" | awk '{print $1}' | grep -v '^template')"
+  printf '%s' "$(su pe-postgres -s "${SHELL}" -c "${SERVER_BIN_DIR?}/psql -t -c 'select datname from pg_catalog.pg_database;'" | awk '{print $1}' | grep -v '^template')"
 }
 
 df_checks() {
@@ -1475,8 +1475,8 @@ mco_commands() {
   if [ -f "${PUPPET_BIN_DIR}/mco" ]; then
     mco_user="peadmin"
     if getent passwd ${mco_user} &> /dev/null; then
-      run_diagnostic --timeout 15 "su - ${mco_user?} -c 'mco ping'" "enterprise/mco_ping_$mco_user.txt"
-      run_diagnostic --timeout 15 "su - ${mco_user?} -c 'mco inventory ${PLATFORM_HOSTNAME}'" "/enterprise/mco_inventory_${mco_user}.txt"
+      run_diagnostic --timeout 15 "su ${mco_user?} -c 'mco ping'" "enterprise/mco_ping_$mco_user.txt"
+      run_diagnostic --timeout 15 "su ${mco_user?} -c 'mco inventory ${PLATFORM_HOSTNAME}'" "/enterprise/mco_inventory_${mco_user}.txt"
     else
       echo "No such user: '${mco_user}'." > "${DROP?}/enterprise/mco_$mco_user.txt"
     fi

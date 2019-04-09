@@ -984,14 +984,14 @@ module PuppetX
       def psql_databases
         return '' unless package_installed?('pe-puppetdb') && user_exists?('pe-postgres')
         sql = 'SELECT datname FROM pg_catalog.pg_database;'
-        command = %(su - pe-postgres --shell /bin/bash --command "#{@paths[:server_bin]}/psql --tuples-only --command '#{sql}'")
+        command = %(su pe-postgres --shell /bin/bash --command "#{@paths[:server_bin]}/psql --tuples-only --command '#{sql}'")
         exec_return_result(command)
       end
 
       def psql_database_sizes
         return '' unless package_installed?('pe-puppetdb') && user_exists?('pe-postgres')
         sql = 'SELECT t1.datname AS db_name, pg_size_pretty(pg_database_size(t1.datname)) FROM pg_database t1 ORDER BY pg_database_size(t1.datname) DESC;'
-        command = %(su - pe-postgres --shell /bin/bash --command "#{@paths[:server_bin]}/psql --command '#{sql}'")
+        command = %(su pe-postgres --shell /bin/bash --command "#{@paths[:server_bin]}/psql --command '#{sql}'")
         exec_return_result(command)
       end
 
@@ -1001,35 +1001,35 @@ module PuppetX
         sql = "SELECT '#{database}' AS db_name, nspname || '.' || relname AS relation, pg_size_pretty(pg_relation_size(C.oid)) \
           FROM pg_class C LEFT JOIN pg_namespace N ON (N.oid = C.relnamespace) WHERE nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast') \
           ORDER BY pg_relation_size(C.oid) DESC;"
-        command = %(su - pe-postgres --shell /bin/bash --command "#{@paths[:server_bin]}/psql --dbname #{database} --command \\"#{sql}\\"")
+        command = %(su pe-postgres --shell /bin/bash --command "#{@paths[:server_bin]}/psql --dbname #{database} --command \\"#{sql}\\"")
         result << exec_return_result(command)
       end
 
       def psql_settings
         return '' unless package_installed?('pe-puppetdb') && user_exists?('pe-postgres')
         sql = 'SELECT * FROM pg_settings;'
-        command = %(su - pe-postgres --shell /bin/bash --command "#{@paths[:server_bin]}/psql --tuples-only --command '#{sql}'")
+        command = %(su pe-postgres --shell /bin/bash --command "#{@paths[:server_bin]}/psql --tuples-only --command '#{sql}'")
         exec_return_result(command)
       end
 
       def psql_stat_activity
         return '' unless package_installed?('pe-puppetdb') && user_exists?('pe-postgres')
         sql = 'SELECT * FROM pg_stat_activity ORDER BY query_start;'
-        command = %(su - pe-postgres --shell /bin/bash --command "#{@paths[:server_bin]}/psql --command '#{sql}'")
+        command = %(su pe-postgres --shell /bin/bash --command "#{@paths[:server_bin]}/psql --command '#{sql}'")
         exec_return_result(command)
       end
 
       def psql_replication_slots
         return '' unless package_installed?('pe-puppetdb') && user_exists?('pe-postgres')
         sql = 'SELECT * FROM pg_replication_slots;'
-        command = %(su - pe-postgres --shell /bin/bash --command "#{@paths[:server_bin]}/psql --dbname pe-puppetdb --command \\"#{sql}\\"")
+        command = %(su pe-postgres --shell /bin/bash --command "#{@paths[:server_bin]}/psql --dbname pe-puppetdb --command \\"#{sql}\\"")
         exec_return_result(command)
       end
 
       def psql_replication_status
         return '' unless package_installed?('pe-puppetdb') && user_exists?('pe-postgres')
         sql = 'SELECT * FROM pg_stat_replication;'
-        command = %(su - pe-postgres --shell /bin/bash --command "#{@paths[:server_bin]}/psql --dbname pe-puppetdb --command \\"#{sql}\\"")
+        command = %(su pe-postgres --shell /bin/bash --command "#{@paths[:server_bin]}/psql --dbname pe-puppetdb --command \\"#{sql}\\"")
         exec_return_result(command)
       end
 
@@ -1041,7 +1041,7 @@ module PuppetX
           WHERE start_time BETWEEN now() - interval '7 days' AND now() \
           GROUP BY date_part('month', start_time), date_part('day', start_time), date_part('hour', start_time), date_part('minute', start_time) \
           ORDER BY date_part('month', start_time) DESC, date_part('day', start_time) DESC, date_part( 'hour', start_time ) DESC, date_part('minute', start_time) DESC;"
-        command = %(su - pe-postgres --shell /bin/bash --command "#{@paths[:server_bin]}/psql --dbname pe-puppetdb --command \\"#{sql}\\"")
+        command = %(su pe-postgres --shell /bin/bash --command "#{@paths[:server_bin]}/psql --dbname pe-puppetdb --command \\"#{sql}\\"")
         exec_return_result(command)
       end
 
