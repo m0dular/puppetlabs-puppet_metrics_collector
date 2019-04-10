@@ -478,6 +478,7 @@ module SupportScript
     def run
       @children.each do |child|
         next unless child.enabled? && child.suitable?
+        start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC, :float_second)
         log.info('starting evaluation of %{name}' %
                  {name: child.name})
 
@@ -490,9 +491,11 @@ module SupportScript
                      message: e.message,
                      backtrace: e.backtrace.join("\n\t")})
         end
-        # TODO: Include elapsed time measured using Process::CLOCK_MONOTONIC
-        log.debug('finished evaluation of %{name}' %
-                  {name: child.name})
+
+        end_time = Process.clock_gettime(Process::CLOCK_MONOTONIC, :float_second)
+        log.debug('finished evaluation of %{name} in %<time>.3f seconds' %
+                  {name: child.name,
+                   time: (end_time - start_time)})
       end
     end
 

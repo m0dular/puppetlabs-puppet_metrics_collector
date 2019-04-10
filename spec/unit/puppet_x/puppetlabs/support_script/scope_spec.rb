@@ -99,6 +99,14 @@ describe PuppetX::Puppetlabs::SupportScript::Scope do
         expect(script_log.string).to match(/RuntimeError raised during test_scope::check_3/)
       end
 
+      it 'logs time consumed by running children' do
+        expect_any_instance_of(check4).to receive(:run) { ::Kernel.sleep(0.05) }
+
+        subject.new(name: 'test_scope').run
+
+        expect(script_log.string).to match(/finished evaluation of test_scope::check_4 in 0\.05\d seconds/)
+      end
+
       context 'when children are enabled or disabled by settings' do
         it 'only runs checks that match the :only settings' do
           script_settings.configure(only: ['test_scope::scope_1',
