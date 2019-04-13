@@ -1993,7 +1993,7 @@ if is_package_installed 'pe-orchestration-services'; then
   orchestration_node_count
 fi
 
-if is_package_installed 'pe-postgresql-server'; then
+if is_package_installed 'pe-postgresql-server' || if is_package_installed 'pe-postgresql96-server'; then
   db_size_checks
   db_relation_size_checks
   get_db_settings
