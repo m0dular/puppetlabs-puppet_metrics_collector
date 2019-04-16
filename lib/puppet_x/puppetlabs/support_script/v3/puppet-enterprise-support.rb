@@ -19,6 +19,8 @@ module Puppetlabs
 # This module contains components for running diagnostic checks on Puppet
 # Enterprise installations.
 module SupportScript
+  VERSION = '3.0.0.beta3'.freeze
+
   # Manages one or more Logger instances
   #
   # Instances of this class wrap one or more instances of Logger and direct
@@ -90,27 +92,70 @@ module SupportScript
 
     def initialize
       @log = LogManager.new
-      @settings = {enable: [],
+      @settings = {dir: File.directory?('/var/tmp') ? '/var/tmp' : '/tmp',
+                   log_age: 14,
+                   noop: false,
+                   encrypt: false,
+                   ticket: '',
+                   upload: false,
+                   upload_disable_host_key_check: false,
+                   z_do_not_delete_drop_directory: false,
+
+                   enable: [],
                    disable: [],
-                   only: []}
+                   only: [],
+
+                   # TODO: Take this out of settings.
+                   version: VERSION,
+
+                   # TODO: Deprecate and replace these with Scope classes.
+                   scope: %w[enterprise etc log networking resources system].product([true]).to_h,
+                   # TODO: Deprecate and replace these with Check classes
+                   #       that default to disabled.
+                   classifier: false,
+                   filesync: false}
     end
 
     # Update configuration of the settings object
     #
     # @param options [Hash] a hash of options to merge into the existing
     #   configuration.
+    #
+    # @raise [ArgumentError] if a configuration option is invalid.
+    #
+    # @return [void]
     def configure(**options)
       options.each do |key, value|
-        case key
-        when :enable, :disable, :only
-          unless value.is_a?(Array)
-            raise ArgumentError, 'The %{key} option must be set to an Array value. Got a value of type %{class}.' %
-              {key: key,
-               class: value.class}
-          end
-        end
+        v = case key
+            when :enable, :disable, :only
+              unless value.is_a?(Array)
+                raise ArgumentError, 'The %{key} option must be set to an Array value. Got a value of type %{class}.' %
+                  {key: key,
+                   class: value.class}
+              end
+            when :noop, :encrypt, :upload, :upload_disable_host_key_check, :z_do_not_delete_drop_directory
+              unless [true, false].include?(value)
+                raise ArgumentError, 'The %{key} option must be set to true or false. Got a value of type %{class}.' %
+                  {key: key,
+                   class: value.class}
+              end
+            when :log_age
+              unless value.to_s.match(%r{\A\d+|all\Z})
+                raise ArgumentError, 'The log_age option must be a number, or the string "all". Got %{value}' %
+                  {value: value}
+              end
 
-        @settings[key] = value
+              (value.to_s == 'all') ? 999 : value.to_i
+            when :scope
+              (value.to_s == '') ? {}  : Hash[value.split(',').product([true])]
+            when :ticket
+              unless value.match(%r{\A[\d\w\-]+\Z})
+                raise ArgumentError, 'The ticket option may contain only numbers, letters, underscores, and dashes. Got %{value}' %
+                  {value: value}
+              end
+            end
+
+        @settings[key] = v || value
       end
     end
   end
@@ -538,6 +583,27 @@ module SupportScript
       end
     end
   end
+
+  # Runtime logic for executing diagnostics
+  #
+  # This class implements the runtime logic of the support script which
+  # consists of:
+  #
+  #   - Setting up runtime state, such as the output directory.
+  #   - Initializng and then executing a list of {Scope} objects.
+  #   - Generating output archives and disposing of any runtime state.
+  class Runner
+    include Configable
+
+    def initialize(**options)
+      initialize_configable
+    end
+
+    def run
+      # TODO Exit codes.
+      ::PuppetX::Puppetlabs::Support.new.run!
+    end
+  end
 end
 end
 end
@@ -547,8 +613,9 @@ module PuppetX
   module Puppetlabs
     # Collects diagnostic information about Puppet Enterprise for Support.
     class Support
-      def initialize(options)
-        @version = '3.0.0.beta3'
+      include SupportScript::Configable
+
+      def initialize
         @doc_url = 'https://puppet.com/docs/pe/2018.1/getting_support_for_pe.html#the-pe-support-script'
 
         @paths = {
@@ -558,11 +625,7 @@ module PuppetX
           server_data:    '/opt/puppetlabs/server/data'
         }
 
-        @options = options
-
-        @options[:version] = @version
-        @options[:log_age] = (options[:log_age].to_s == 'all') ? 999 : options[:log_age].to_i
-        @options[:scope]   = (options[:scope].to_s == '')      ? {}  : Hash[options[:scope].split(',').product([true])]
+        initialize_configable
 
         @pgp_recipient = 'FD172197'
 
@@ -596,12 +659,12 @@ module PuppetX
 
         create_metadata_file
 
-        collect_scope_enterprise if @options[:scope]['enterprise']
-        collect_scope_etc        if @options[:scope]['etc']
-        collect_scope_log        if @options[:scope]['log']
-        collect_scope_networking if @options[:scope]['networking']
-        collect_scope_resources  if @options[:scope]['resources']
-        collect_scope_system     if @options[:scope]['system']
+        collect_scope_enterprise if settings[:scope]['enterprise']
+        collect_scope_etc        if settings[:scope]['etc']
+        collect_scope_log        if settings[:scope]['log']
+        collect_scope_networking if settings[:scope]['networking']
+        collect_scope_resources  if settings[:scope]['resources']
+        collect_scope_system     if settings[:scope]['system']
 
         @output_archive = create_drop_directory_archive
 
@@ -788,7 +851,7 @@ module PuppetX
       #=========================================================================
 
       # Collect Puppet Enterprise diagnostics.
-      # Instance Variables: @options, @drop_directory, @paths, @platform
+      # Instance Variables: @drop_directory, @paths, @platform
 
       def collect_scope_enterprise
         display 'Collecting Enterprise Diagnostics'
@@ -858,7 +921,7 @@ module PuppetX
         end unless puppetserver_environments.empty?
 
         # Collect Puppet Enterprise Classifier groups.
-        if @options[:classifier]
+        if settings[:classifier]
           data_drop(curl_classifier_groups, scope_directory, 'classifier_groups.json')
         end
 
@@ -904,7 +967,7 @@ module PuppetX
         filesync_directory =     '/opt/puppetlabs/server/data/puppetserver/filesync'
         exec_drop("du -h --max-depth=1 #{code_staging_directory}", scope_directory, 'code_staging_sizes_from_du.txt') if File.directory?(code_staging_directory)
         exec_drop("du -h --max-depth=1 #{filesync_directory}",     scope_directory, 'filesync_sizes_from_du.txt')     if File.directory?(filesync_directory)
-        if @options[:filesync]
+        if settings[:filesync]
           # Scope Redirect: This drops into etc instead of enterprise.
           copy_drop(code_staging_directory, @drop_directory)
           # Scope Redirect: This drops into opt instead of enterprise.
@@ -922,8 +985,8 @@ module PuppetX
 
         # Collect Puppet Enterprise Metrics.
         recreate_parent_path = false
-        copy_drop_mtime('/opt/puppetlabs/pe_metric_curl_cron_jobs', @drop_directory, @options[:log_age], recreate_parent_path)
-        copy_drop_mtime('/opt/puppetlabs/puppet-metrics-collector', @drop_directory, @options[:log_age], recreate_parent_path)
+        copy_drop_mtime('/opt/puppetlabs/pe_metric_curl_cron_jobs', @drop_directory, settings[:log_age], recreate_parent_path)
+        copy_drop_mtime('/opt/puppetlabs/puppet-metrics-collector', @drop_directory, settings[:log_age], recreate_parent_path)
 
         # Collect all Orchestrator logs for the number of active nodes.
         recreate_parent_path = true
@@ -931,7 +994,7 @@ module PuppetX
       end
 
       # Collect system configuration files.
-      # Instance Variables: @options, @drop_directory
+      # Instance Variables: @drop_directory
 
       def collect_scope_etc
         display 'Collecting Config Files'
@@ -971,7 +1034,7 @@ module PuppetX
       end
 
       # Collect puppet and system logs.
-      # Instance Variables: @options, @drop_directory, @paths
+      # Instance Variables: @drop_directory, @paths
 
       def collect_scope_log
         display 'Collecting Log Files'
@@ -996,10 +1059,10 @@ module PuppetX
         copy_drop('/var/log/puppetlabs/installer', @drop_directory)
 
         recreate_parent_path = true
-        copy_drop_mtime('/var/log/puppetlabs', @drop_directory, @options[:log_age], recreate_parent_path)
+        copy_drop_mtime('/var/log/puppetlabs', @drop_directory, settings[:log_age], recreate_parent_path)
 
         puppet_enterprise_services_list.each do |service|
-          exec_drop("journalctl --full --output=short-iso --unit=#{service} --since '#{@options[:log_age]} days ago'", scope_directory, "#{service}-journalctl.log")
+          exec_drop("journalctl --full --output=short-iso --unit=#{service} --since '#{settings[:log_age]} days ago'", scope_directory, "#{service}-journalctl.log")
         end
 
         exec_drop('cat /var/lib/peadmin/.mcollective.d/client.log', scope_directory, 'peadmin_mcollective_client.log')
@@ -1283,26 +1346,22 @@ module PuppetX
       end
 
       # Validate the output directory, or exit.
-      # Instance Variables: @options
-
       def validate_output_directory
-        fail_and_exit("Output directory #{@options[:dir]} does not exist") unless File.directory?(@options[:dir])
-        fail_and_exit("Output directory #{@options[:dir]} cannot be a symlink") if File.symlink?(@options[:dir])
+        fail_and_exit("Output directory #{settings[:dir]} does not exist") unless File.directory?(settings[:dir])
+        fail_and_exit("Output directory #{settings[:dir]} cannot be a symlink") if File.symlink?(settings[:dir])
       end
 
       # Verify free disk space for the output directory, or exit.
-      # Instance Variables: @options
-
       def validate_output_directory_disk_space
         available = 0
         required = 32_768
         puppet_enterprise_directories_to_size_by_age.each do |directory|
           if File.directory?(directory)
-            used = exec_return_result(%(find #{directory} -type f -mtime -#{@options[:log_age]} -exec du -sk {} \\; | cut -f1 | awk '{total=total+$1}END{print total}').chomp)
+            used = exec_return_result(%(find #{directory} -type f -mtime -#{settings[:log_age]} -exec du -sk {} \\; | cut -f1 | awk '{total=total+$1}END{print total}').chomp)
             required += used.to_i unless used == ''
           end
         end
-        if @options[:filesync]
+        if settings[:filesync]
           puppet_enterprise_directories_to_size_for_filesync.each do |directory|
             if File.directory?(directory)
               used = exec_return_result(%(du -sk #{directory} | cut -f1).chomp)
@@ -1312,16 +1371,16 @@ module PuppetX
         end
         # Double the total used by source directories, to account for the original output directory and compressed archive.
         required = (required * 2) / 1024
-        free = exec_return_result(%(df -Pk "#{@options[:dir]}" | grep -v Available).chomp)
+        free = exec_return_result(%(df -Pk "#{settings[:dir]}" | grep -v Available).chomp)
         available = free.split(' ')[3].to_i / 1024 unless free == ''
-        fail_and_exit("Not enough free disk space in #{@options[:dir]}. Available: #{available} MB, Required: #{required} MB") if available < required
+        fail_and_exit("Not enough free disk space in #{settings[:dir]}. Available: #{available} MB, Required: #{required} MB") if available < required
       end
 
       # Verify upload key exists if specified, or exit.
 
       def validate_upload_key
-        return unless @options[:upload_key]
-        fail_and_exit("#{@options[:upload_key]} does not exist") unless File.exists?(@options[:upload_key])
+        return unless settings[:upload_key]
+        fail_and_exit("#{settings[:upload_key]} does not exist") unless File.exists?(settings[:upload_key])
       end
 
       # Query the runtime platform.
@@ -1616,11 +1675,11 @@ module PuppetX
       #=========================================================================
 
       # Create the drop directory, or exit.
-      # Instance Variables: @options, @platform
+      # Instance Variables: @platform
 
       def create_drop_directory
         timestamp = Time.now.strftime('%Y%m%d%H%M%S')
-        drop_directory = ["#{@options[:dir]}/puppet_enterprise_support", @options[:ticket], @platform[:hostname], timestamp].reject(&:empty?).join('_')
+        drop_directory = ["#{settings[:dir]}/puppet_enterprise_support", settings[:ticket], @platform[:hostname], timestamp].reject(&:empty?).join('_')
         if unsupported_drop_directory?(drop_directory)
           fail_and_exit("Unsupported output directory: #{drop_directory}")
         end
@@ -1633,11 +1692,11 @@ module PuppetX
       end
 
       # Create the metadata file.
-      # Instance Variables: @options, @drop_directory
+      # Instance Variables: @drop_directory
 
       def create_metadata_file
         begin
-          metadata = JSON.pretty_generate(@options)
+          metadata = JSON.pretty_generate(settings)
         rescue JSON::GeneratorError
           metadata = '{}'
           logline 'error: pretty_json: unable to generate json'
@@ -1656,7 +1715,7 @@ module PuppetX
       end
 
       # Archive, compress, and optionally encrypt the drop directory or exit.
-      # Instance Variables: @options, @drop_directory, @pgp_recipient
+      # Instance Variables: @drop_directory, @pgp_recipient
 
       def create_drop_directory_archive
         display "Processing output directory: #{@drop_directory}"
@@ -1674,7 +1733,7 @@ module PuppetX
           File.umask(old_umask)
         end
         delete_drop_directory
-        if @options[:encrypt]
+        if settings[:encrypt]
           gpg_command = executable?('gpg') ? 'gpg' : nil
           gpg_command = 'gpg2' if executable?('gpg2')
           unless gpg_command
@@ -1693,10 +1752,10 @@ module PuppetX
       end
 
       # Delete the drop directory or exit.
-      # Instance Variables: @options, @drop_directory
+      # Instance Variables: @drop_directory
 
       def delete_drop_directory
-        return if @options[:z_do_not_delete_drop_directory]
+        return if settings[:z_do_not_delete_drop_directory]
         if unsupported_drop_directory?(@drop_directory)
           fail_and_exit("Unsupported output directory: #{@drop_directory}")
         end
@@ -1706,10 +1765,10 @@ module PuppetX
       end
 
       # Optionally upload the archive file to Puppet Support.
-      # Instance Variables: @options, @sftp_host, @sftp_user, @output_archive
+      # Instance Variables: @sftp_host, @sftp_user, @output_archive
 
       def optionally_upload_to_puppet_support
-        return unless @options[:upload]
+        return unless settings[:upload]
         display "Uploading: #{@output_archive} via SFTP"
         display
         unless executable?('sftp')
@@ -1718,7 +1777,7 @@ module PuppetX
           return
         end
 
-        if @options[:upload_disable_host_key_check]
+        if settings[:upload_disable_host_key_check]
           ssh_known_hosts = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
         else
           ssh_known_hosts_file = Tempfile.new('csp.ky')
@@ -1726,13 +1785,13 @@ module PuppetX
           ssh_known_hosts_file.close
           ssh_known_hosts = "-o StrictHostKeyChecking=yes -o UserKnownHostsFile=#{ssh_known_hosts_file.path}"
         end
-        if @options[:upload_user]
-          sftp_url = "#{@options[:upload_user]}@#{@sftp_host}:/"
+        if settings[:upload_user]
+          sftp_url = "#{settings[:upload_user]}@#{@sftp_host}:/"
         else
           sftp_url = "#{@sftp_user}@#{@sftp_host}:/drop/"
         end
-        if @options[:upload_key]
-          ssh_key_file = File.absolute_path(@options[:upload_key])
+        if settings[:upload_key]
+          ssh_key_file = File.absolute_path(settings[:upload_key])
           ssh_identity = "IdentityFile=#{ssh_key_file}"
         else
           ssh_key_file = Tempfile.new('pes.ky')
@@ -1757,8 +1816,8 @@ module PuppetX
             display
             File.delete(@output_archive)
           else
-            ssh_key_file.unlink unless @options[:upload_key]
-            ssh_known_hosts_file.unlink unless @options[:upload_disable_host_key_check]
+            ssh_key_file.unlink unless settings[:upload_key]
+            ssh_known_hosts_file.unlink unless settings[:upload_disable_host_key_check]
             display ' ** Unable to upload the output archive file. SFTP Output:'
             display
             display sftp_output
@@ -1769,8 +1828,8 @@ module PuppetX
             display
           end
         rescue Facter::Core::Execution::ExecutionFailure => e
-          ssh_key_file.unlink unless @options[:upload_key]
-          ssh_known_hosts_file.unlink unless @options[:upload_disable_host_key_check]
+          ssh_key_file.unlink unless settings[:upload_key]
+          ssh_known_hosts_file.unlink unless settings[:upload_disable_host_key_check]
           display ' ** Unable to upload the output archive file: SFTP command error:'
           display
           display e
@@ -1783,10 +1842,10 @@ module PuppetX
       end
 
       # Summary.
-      # Instance Variables: @options, @sftp_host, @doc_url, @output_archive
+      # Instance Variables: @sftp_host, @doc_url, @output_archive
 
       def report_summary
-        unless @options[:upload]
+        unless settings[:upload]
           display 'Puppet Enterprise customers ...'
           display
           display '  We recommend that you examine the collected data before forwarding to Puppet,'
@@ -1903,10 +1962,8 @@ module PuppetX
       end
 
       # Test for noop mode.
-      # Instance Variables: @options
-
       def noop?
-        @options[:noop] == true
+        settings[:noop] == true
       end
 
       # Pretty Format JSON, minus a list of blacklisted keys.
@@ -2115,7 +2172,6 @@ if File.expand_path(__FILE__) == File.expand_path($PROGRAM_NAME)
     opts.on('-c', '--classifier', 'Include Classifier data') do
       options[:classifier] = true
     end
-    options[:dir] = default_dir
     opts.on('-d', '--dir DIRECTORY', "Output directory. Defaults to: #{default_dir}") do |dir|
       options[:dir] = dir
     end
@@ -2125,18 +2181,12 @@ if File.expand_path(__FILE__) == File.expand_path($PROGRAM_NAME)
     opts.on('-f', '--filesync', 'Include FileSync data') do
       options[:filesync] = true
     end
-    options[:log_age] = default_log_age
     opts.on('-l', '--log_age DAYS', "Log age (in days) to collect. Defaults to: #{default_log_age}") do |log_age|
-      unless log_age.to_s =~ %r{^\d+|all$}
-        puts "Error: The log-age parameter must be a number, or the string 'all'. Got: #{log_age}"
-        exit 1
-      end
       options[:log_age] = log_age
     end
     opts.on('-n', '--noop', 'Enable noop mode') do
       options[:noop] = true
     end
-    options[:scope] = default_scope
     opts.on('-s', '--scope LIST', "Scope (comma-delimited) of diagnostics to collect. Defaults to: #{default_scope}") do |scope|
       options_scope = scope.tr(' ', '')
       unless options_scope =~ %r{^(\w+)(,\w+)*$}
@@ -2145,12 +2195,7 @@ if File.expand_path(__FILE__) == File.expand_path($PROGRAM_NAME)
       end
       options[:scope] = options_scope
     end
-    options[:ticket] = ''
     opts.on('-t', '--ticket NUMBER', 'Support ticket number') do |ticket|
-      unless ticket =~ %r{^all|\d+$}
-        puts "Error: The ticket parameter may contain only numbers, letters, and dashes. Got: #{ticket}"
-        exit 1
-      end
       options[:ticket] = ticket
     end
     opts.on('-u', '--upload', 'Upload to Puppet Support via SFTP. Requires the --ticket parameter') do
@@ -2176,6 +2221,7 @@ if File.expand_path(__FILE__) == File.expand_path($PROGRAM_NAME)
   end
   parser.parse!
 
-  support = PuppetX::Puppetlabs::Support.new(options)
-  support.run!
+  PuppetX::Puppetlabs::SupportScript::Settings.instance.configure(**options)
+  support = PuppetX::Puppetlabs::SupportScript::Runner.new
+  support.run
 end

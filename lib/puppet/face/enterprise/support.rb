@@ -47,7 +47,6 @@ Puppet::Face.define(:enterprise, '1.0.0') do
 
     option '--ticket NUMBER' do
       summary 'Support ticket number'
-      default_to { '' }
     end
 
     option '--upload' do
@@ -149,7 +148,7 @@ Puppet::Face.define(:enterprise, '1.0.0') do
         exit 1
       end
 
-      unless options[:ticket] == ''
+      if options.key?(:ticket)
         if options[:ticket] =~ %r{^[\d\w\-]+$}
           support_script_parameters.push("-t#{options[:ticket]}")
         else
@@ -158,15 +157,17 @@ Puppet::Face.define(:enterprise, '1.0.0') do
         end
       end
 
-      if options[:upload] && (options[:ticket] == '' || options[:v3] != true)
+      if options[:upload] && (options[:ticket].nil? || options[:v3] != true)
         Puppet.err('The upload parameter requires the --ticket and --v3 parameters.')
         exit 1
       end
 
       if options[:v3]
         require 'puppet_x/puppetlabs/support_script/v3/puppet-enterprise-support'
-        support = PuppetX::Puppetlabs::Support.new(options)
-        support.run!
+        PuppetX::Puppetlabs::SupportScript::Settings.instance.configure(**options)
+        support = PuppetX::Puppetlabs::SupportScript::Runner.new
+        support.run
+        # TODO: Return a proper exit code.
         return
       else
         support_script = File.join(support_module, 'lib/puppet_x/puppetlabs/support_script/v1/puppet-enterprise-support.sh')
