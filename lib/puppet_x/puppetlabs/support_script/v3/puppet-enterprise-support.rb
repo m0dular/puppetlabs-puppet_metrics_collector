@@ -1545,6 +1545,7 @@ if File.expand_path(__FILE__) == File.expand_path($PROGRAM_NAME)
     opts.on('-f', '--filesync', 'Include FileSync data') do
       options[:filesync] = true
     end
+    options[:log_age] = default_log_age
     opts.on('-l', '--log_age DAYS', "Log age (in days) to collect. Defaults to: #{default_log_age}") do |log_age|
       unless log_age.to_s =~ %r{^\d+|all$}
         puts "Error: The log-age parameter must be a number, or the string 'all'. Got: #{log_age}"
