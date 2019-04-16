@@ -1532,7 +1532,6 @@ if File.expand_path(__FILE__) == File.expand_path($PROGRAM_NAME)
     opts.separator ''
     opts.separator 'Options:'
     opts.separator ''
-    options[:classifier] = false
     opts.on('-c', '--classifier', 'Include Classifier data') do
       options[:classifier] = true
     end
@@ -1540,15 +1539,12 @@ if File.expand_path(__FILE__) == File.expand_path($PROGRAM_NAME)
     opts.on('-d', '--dir DIRECTORY', "Output directory. Defaults to: #{default_dir}") do |dir|
       options[:dir] = dir
     end
-    options[:encrypt] = false
     opts.on('-e', '--encrypt', 'Encrypt output using GPG') do
       options[:encrypt] = true
     end
-    options[:filesync] = false
     opts.on('-f', '--filesync', 'Include FileSync data') do
       options[:filesync] = true
     end
-    options[:log_age] = default_log_age
     opts.on('-l', '--log_age DAYS', "Log age (in days) to collect. Defaults to: #{default_log_age}") do |log_age|
       unless log_age.to_s =~ %r{^\d+|all$}
         puts "Error: The log-age parameter must be a number, or the string 'all'. Got: #{log_age}"
@@ -1556,7 +1552,6 @@ if File.expand_path(__FILE__) == File.expand_path($PROGRAM_NAME)
       end
       options[:log_age] = log_age
     end
-    options[:noop] = false
     opts.on('-n', '--noop', 'Enable noop mode') do
       options[:noop] = true
     end
@@ -1577,23 +1572,18 @@ if File.expand_path(__FILE__) == File.expand_path($PROGRAM_NAME)
       end
       options[:ticket] = ticket
     end
-    options[:upload] = false
     opts.on('-u', '--upload', 'Upload to Puppet Support via SFTP. Requires the --ticket parameter') do
       options[:upload] = true
     end
-    options[:upload_disable_host_key_check] = false
     opts.on('--upload_disable_host_key_check', 'Disable SFTP Host Key Check. Requires the --upload parameter') do
       options[:upload_disable_host_key_check] = true
     end
-    options[:upload_key] = ''
     opts.on('--upload_key FILE', 'Key for SFTP. Requires the --upload parameter') do |upload_key|
       options[:upload_key] = upload_key
     end
-    options[:upload_user] = ''
     opts.on('--upload_user USER', 'User for SFTP. Requires the --upload parameter') do |upload_user|
       options[:upload_user] = upload_user
     end
-    options[:z_do_not_delete_drop_directory] = false
     opts.on('-z', 'Do not delete output directory after archiving') do
       options[:z_do_not_delete_drop_directory] = true
     end
