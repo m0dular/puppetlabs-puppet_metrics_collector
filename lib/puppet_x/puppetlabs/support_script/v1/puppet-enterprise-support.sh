@@ -825,10 +825,15 @@ get_proc_files() {
     destpath="${DROP?}"/system/proc/"${pid}"
     mkdir -p "${destpath}"
     for FILE in cmdline limits environ; do
-      cp /proc/"${pid}"/"${FILE}" "${destpath}"
+      cp --dereference --preserve /proc/"${pid}"/"${FILE}" "${destpath}"
     done
     readlink /proc/"${pid}"/exe > "${destpath}"/exe
   done
+
+  if [[ -d "${DROP}/system/proc/" ]]; then
+    # Ensure files can be removed when the archive is extracted.
+    chmod -R u+wX "${DROP}/system/proc/"
+  fi
 }
 
 etc_checks() {
@@ -947,13 +952,18 @@ cgroup_data() {
               # NOTE: Some "files" under the cgroup mount are write-only,
               #       so we just copy the readable ones.
               find "/sys/fs/cgroup/${FS}/system.slice/${SERVICE}.service/" -type f -perm /444 \
-                -exec cp -t "${DROP?}/system/sys/fs/cgroup/${FS}/system.slice/${SERVICE}.service/" {} +
+                -exec cp --dereference --preserve -t "${DROP?}/system/sys/fs/cgroup/${FS}/system.slice/${SERVICE}.service/" {} +
             fi
           done
         done
       fi
     ;;
   esac
+
+  if [[ -d "${DROP}/system/sys/" ]]; then
+    # Ensure files can be removed when the archive is extracted.
+    chmod -R u+wX "${DROP}/system/sys/"
+  fi
 }
 
 grab_env_vars() {

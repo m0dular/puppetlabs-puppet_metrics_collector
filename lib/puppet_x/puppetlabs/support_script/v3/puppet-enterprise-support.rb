@@ -553,6 +553,7 @@ module PuppetX
             copy_drop_match("/sys/fs/cgroup/#{fs}/system.slice/#{service}.service/", scope_directory, '*')
           end
         end
+        FileUtils.chmod_R('u+wX', "#{scope_directory}/sys") if File.exist?("#{scope_directory}/sys")
 
         pids = Array.new
         pids.push(exec_return_result('pgrep -f "puppetlabs/bolt-server"'))
@@ -575,6 +576,7 @@ module PuppetX
           end
           data_drop(File.readlink("/proc/#{pid}/exe"), destpath, 'exe')
         end
+        FileUtils.chmod_R('u+wX', "#{scope_directory}/proc") unless pids.empty?
 
         puppet_enterprise_services_list.each do |service|
           exec_drop("systemctl status #{service}", scope_directory, 'systemctl-status.txt')
