@@ -1,3 +1,34 @@
+## [Release 2.11.0] - 2019-04-17
+
+### Summary
+
+Feature and bugfix release of the Support Script.
+
+### Features
+
+  - The Ruby support script now has an `--upload` option that uploads results
+    to SFTP servers hosted by Puppet Inc. Requires the `--v3` flag to be
+    passed and a value to be specified for the `--ticket` flag.
+
+  - The support script now collects the output of `puppet infrastructure tune`.
+
+  - The support script now collects process information from `/proc` for each
+    PE service.
+
+  - The support script now collects information from `/sys/fs/cgroup` for each
+    PE service.
+
+  - The support script now collects the output of `systemctl status` for each
+    PE service.
+
+  - The support script now supports RedHat 8 operating systems.
+
+### Bug Fixes
+
+  - The support script no longer creates a login shell when switching users
+    to run diagnostics.
+
+
 ## [Release 2.10.0] - 2019-01-15
 
 ### Summary
@@ -503,6 +534,7 @@ installations, not agents.
     seconds.
 
 
+[Release 2.11.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/2.10.0...2.11.0
 [Release 2.10.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/2.9.1...2.10.0
 [Release 2.9.1]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/2.9.0...2.9.1
 [Release 2.9.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/2.8.0...2.9.0
