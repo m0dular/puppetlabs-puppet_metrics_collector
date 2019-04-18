@@ -166,9 +166,9 @@ Puppet::Face.define(:enterprise, '1.0.0') do
         require 'puppet_x/puppetlabs/support_script/v3/puppet-enterprise-support'
         PuppetX::Puppetlabs::SupportScript::Settings.instance.configure(**options)
         support = PuppetX::Puppetlabs::SupportScript::Runner.new
-        support.run
-        # TODO: Return a proper exit code.
-        return
+        support.add_child(PuppetX::Puppetlabs::Support)
+
+        return support.run
       else
         support_script = File.join(support_module, 'lib/puppet_x/puppetlabs/support_script/v1/puppet-enterprise-support.sh')
         Kernel.exec('/bin/bash', support_script, *support_script_parameters)

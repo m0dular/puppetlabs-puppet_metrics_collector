@@ -597,11 +597,86 @@ module SupportScript
 
     def initialize(**options)
       initialize_configable
+
+      @child_specs = []
     end
 
+    # Add a child to be executed by this Runner instance
+    #
+    # @param klass [Class] the class from which the child should be
+    #   initialized. Must implement a `run` method.
+    # @param options [Hash] a hash of options to pass when initializing
+    #   the child.
+    # @return [void]
+    def add_child(klass, **options)
+      @child_specs.push([klass, options])
+    end
+
+    # Initialize runtime state
+    #
+    # This method loads required libraries, validates the runtime environment
+    # and initializes output directories.
+    #
+    # @return [true] if setup completes successfully.
+    # @return [false] if setup encounters an error.
+    def setup
+      ['puppet', 'facter'].each do |lib|
+        begin
+          require lib
+        rescue ScriptError, StandardError => e
+          log.error("%{exception_class} raised when loading %{library}: %{message}\n\t%{backtrace}" %
+                    {exception_class: e.class,
+                     library: lib,
+                     message: e.message,
+                     backtrace: e.backtrace.join("\n\t")})
+          return false
+        end
+      end
+
+      # FIXME: Replace with Scopes that are confined to Linux.
+      unless /linux/i.match(Facter.value('kernel'))
+        log.error('The support script is limited to Linux operating systems.')
+        return false
+      end
+
+      # FIXME: Replace with Scopes that are confined to requiring root.
+      unless Facter.value('identity')['privileged']
+        log.error('The support script must be run with root privilages.')
+        return false
+      end
+
+      true
+    end
+
+    # Execute diagnostics
+    #
+    # This manages the setup of output directories and other state, followed
+    # by the execution of all diagnostic classes created via {add_child}, and
+    # finally creates archive formats and tears down runtime state.
+    #
+    # @return [0] if all operations were successful.
+    # @return [1] if any operation failed.
     def run
-      # TODO Exit codes.
-      ::PuppetX::Puppetlabs::Support.new.run!
+      setup or return 1
+
+      begin
+        @child_specs.each do |(klass, opts)|
+          opts ||= {}
+          child = klass.new(**opts)
+
+          child.run
+        end
+      rescue => e
+        log.error("%{exception_class} raised when executing diagnostics: %{message}\n\t%{backtrace}" %
+                  {exception_class: e.class,
+                   message: e.message,
+                   backtrace: e.backtrace.join("\n\t")})
+
+        return 1
+      end
+
+
+      return 0
     end
   end
 end
@@ -615,7 +690,7 @@ module PuppetX
     class Support
       include SupportScript::Configable
 
-      def initialize
+      def initialize(**options)
         @doc_url = 'https://puppet.com/docs/pe/2018.1/getting_support_for_pe.html#the-pe-support-script'
 
         @paths = {
@@ -645,9 +720,7 @@ module PuppetX
         @saves = {}
       end
 
-      def run!
-        validate_operating_system
-        validate_user
+      def run
         validate_output_directory
         validate_output_directory_disk_space
         validate_upload_key
@@ -1326,24 +1399,6 @@ module PuppetX
       #=========================================================================
       # Inspection
       #=========================================================================
-
-      # Validate the operating system, or exit.
-
-      def validate_operating_system
-        script_name = File.basename(__FILE__)
-        command = %(uname -s)
-        kernel_name = exec_return_result(command)
-        fail_and_exit("#{script_name} is limited to supported operating systems for master platorms") unless kernel_name == 'Linux'
-      end
-
-      # Validate the runtime user, or exit.
-
-      def validate_user
-        script_name = File.basename(__FILE__)
-        command = %(id --user)
-        user_id = exec_return_result(command)
-        fail_and_exit("#{script_name} must be run as root") unless user_id == '0'
-      end
 
       # Validate the output directory, or exit.
       def validate_output_directory
@@ -2147,20 +2202,6 @@ if File.expand_path(__FILE__) == File.expand_path($PROGRAM_NAME)
   puts 'Puppet Enterprise Support Script'
   puts
 
-  begin
-    require 'facter'
-  rescue LoadError
-    puts "Error: 'facter' gem is not installed."
-    exit 1
-  end
-
-  begin
-    require 'puppet'
-  rescue LoadError
-    puts "Error: 'puppet' gem is not installed."
-    exit 1
-  end
-
   options = {}
   parser = OptionParser.new do |opts|
     opts.banner = "Usage: #{File.basename(__FILE__)} [options]"
@@ -2223,5 +2264,7 @@ if File.expand_path(__FILE__) == File.expand_path($PROGRAM_NAME)
 
   PuppetX::Puppetlabs::SupportScript::Settings.instance.configure(**options)
   support = PuppetX::Puppetlabs::SupportScript::Runner.new
-  support.run
+  support.add_child(PuppetX::Puppetlabs::Support)
+
+  exit support.run
 end
