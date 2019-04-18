@@ -158,6 +158,36 @@ module SupportScript
         @settings[key] = v || value
       end
     end
+
+    # Validate runtime configuration
+    #
+    # The validate method performs runtime verification of settings. This
+    # method is used to ensure that file-based settings point to accssable
+    # locations and that appropriate combinations of values have been provided
+    # for settings that depend on each other.
+    #
+    # @raise [RuntimeError] raised if an invalid setting is found.
+    #
+    # @return [void]
+    def validate
+      if File.symlink?(@settings[:dir])
+        raise 'The dir option cannot be a symlink: %{dir}' %
+              {dir: @settings[:dir]}
+      elsif (! File.directory?(@settings[:dir]))
+        raise 'The dir option is not an existing directory: %{dir}' %
+              {dir: @settings[:dir]}
+      end
+
+      if ( @settings[:upload] && (@settings[:ticket].nil? || settings[:ticket].empty?) )
+        raise 'The upload option requires a value to be specified for the ticket setting.'
+      end
+
+      if ( @settings[:upload] &&
+           @settings.key?(:upload_key) && (! File.readable?(@settings[:upload_key])) )
+        raise 'The upload_key option is not readable or does not exist: %{key}' %
+              {key: @settings[:upload_key]}
+      end
+    end
   end
 
   # Mix-in module for accessing shared settings and state
@@ -645,6 +675,16 @@ module SupportScript
         return false
       end
 
+      begin
+        Settings.instance.validate
+      rescue => e
+        log.error("%{exception_class} raised when validating settings: %{message}\n\t%{backtrace}" %
+                  {exception_class: e.class,
+                   message: e.message,
+                   backtrace: e.backtrace.join("\n\t")})
+        return false
+      end
+
       true
     end
 
@@ -674,7 +714,6 @@ module SupportScript
 
         return 1
       end
-
 
       return 0
     end
@@ -721,9 +760,7 @@ module PuppetX
       end
 
       def run
-        validate_output_directory
         validate_output_directory_disk_space
-        validate_upload_key
 
         query_platform
 
@@ -1400,12 +1437,6 @@ module PuppetX
       # Inspection
       #=========================================================================
 
-      # Validate the output directory, or exit.
-      def validate_output_directory
-        fail_and_exit("Output directory #{settings[:dir]} does not exist") unless File.directory?(settings[:dir])
-        fail_and_exit("Output directory #{settings[:dir]} cannot be a symlink") if File.symlink?(settings[:dir])
-      end
-
       # Verify free disk space for the output directory, or exit.
       def validate_output_directory_disk_space
         available = 0
@@ -1429,13 +1460,6 @@ module PuppetX
         free = exec_return_result(%(df -Pk "#{settings[:dir]}" | grep -v Available).chomp)
         available = free.split(' ')[3].to_i / 1024 unless free == ''
         fail_and_exit("Not enough free disk space in #{settings[:dir]}. Available: #{available} MB, Required: #{required} MB") if available < required
-      end
-
-      # Verify upload key exists if specified, or exit.
-
-      def validate_upload_key
-        return unless settings[:upload_key]
-        fail_and_exit("#{settings[:upload_key]} does not exist") unless File.exists?(settings[:upload_key])
       end
 
       # Query the runtime platform.

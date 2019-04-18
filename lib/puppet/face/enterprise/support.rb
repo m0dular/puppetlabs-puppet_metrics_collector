@@ -109,15 +109,6 @@ Puppet::Face.define(:enterprise, '1.0.0') do
         support_script_parameters.push("-d#{options[:dir]}")
       end
 
-      if options[:disable_host_key_check] && options[:upload] != true
-        Puppet.err('The disble-host-key-check parameter requires the --upload parameter.')
-        exit 1
-      end
-
-      if options[:disable_host_key_check]
-        support_script_parameters.push('-k')
-      end
-
       if options[:encrypt]
         support_script_parameters.push('-e')
       end
@@ -157,8 +148,8 @@ Puppet::Face.define(:enterprise, '1.0.0') do
         end
       end
 
-      if options[:upload] && (options[:ticket].nil? || options[:v3] != true)
-        Puppet.err('The upload parameter requires the --ticket and --v3 parameters.')
+      if options[:upload] && (options[:v3] != true)
+        Puppet.err('The upload parameter requires the --v3 parameter.')
         exit 1
       end
 

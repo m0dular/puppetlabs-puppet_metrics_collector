@@ -31,4 +31,33 @@ describe PuppetX::Puppetlabs::SupportScript::Settings do
                     /must be a number, or the string "all"/)
     end
   end
+
+  context 'when validating' do
+    it 'validates that dir points to an existing directory' do
+      subject.configure(dir: '/does/not/exist')
+
+      expect { subject.validate }.to \
+        raise_error(RuntimeError,
+                    /not an existing directory/)
+    end
+
+    context 'when upload is enabled' do
+      before(:each) { subject.configure(upload: true) }
+
+      it 'requires ticket to be set if upload is enabled' do
+        # ticket defaults to an empty string: ''
+
+        expect { subject.validate }.to \
+          raise_error(RuntimeError,
+                      /requires a value to be specified for the ticket setting/)
+      end
+
+      it 'validates that upload_key points to a readable file' do
+        subject.configure(upload_key: '/does/not/exist', ticket: '12345')
+        expect { subject.validate }.to \
+          raise_error(RuntimeError,
+                      /not readable or does not exist/)
+      end
+    end
+  end
 end
