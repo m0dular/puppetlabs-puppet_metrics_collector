@@ -34,6 +34,24 @@ module SupportScript
   #   - `fatal`
   #   - `unknown`
   class LogManager
+    # Create a Logger instance sending messages to stderr
+    #
+    # This method creates an instance of Ruby's standard Logger class that
+    # sends messages to stderr. Formatting is kept simple and is intended
+    # for consumption by humans.
+    #
+    # @return [Logger]
+    def self.console_logger
+      logger = ::Logger.new($stderr)
+      # TODO: Should be configurable.
+      logger.level = ::Logger::INFO
+      logger.formatter = proc do |severity, datetime, progname, msg|
+                           "%s: %s\n" % [severity, msg]
+                         end
+
+      logger
+    end
+
     def initialize
       @loggers = []
     end
@@ -2287,6 +2305,7 @@ if File.expand_path(__FILE__) == File.expand_path($PROGRAM_NAME)
   parser.parse!
 
   PuppetX::Puppetlabs::SupportScript::Settings.instance.configure(**options)
+  PuppetX::Puppetlabs::SupportScript::Settings.instance.log.add_logger(PuppetX::Puppetlabs::SupportScript::LogManager.console_logger)
   support = PuppetX::Puppetlabs::SupportScript::Runner.new
   support.add_child(PuppetX::Puppetlabs::Support)
 

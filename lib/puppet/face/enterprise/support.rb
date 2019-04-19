@@ -156,6 +156,7 @@ Puppet::Face.define(:enterprise, '1.0.0') do
       if options[:v3]
         require 'puppet_x/puppetlabs/support_script/v3/puppet-enterprise-support'
         PuppetX::Puppetlabs::SupportScript::Settings.instance.configure(**options)
+        PuppetX::Puppetlabs::SupportScript::Settings.instance.log.add_logger(PuppetX::Puppetlabs::SupportScript::LogManager.console_logger)
         support = PuppetX::Puppetlabs::SupportScript::Runner.new
         support.add_child(PuppetX::Puppetlabs::Support)
 
