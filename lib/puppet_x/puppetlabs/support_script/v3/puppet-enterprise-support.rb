@@ -103,6 +103,7 @@ module SupportScript
   class Settings
     attr_reader :log
     attr_accessor :settings
+    attr_accessor :state
 
     def self.instance
       @instance ||= new
@@ -132,6 +133,7 @@ module SupportScript
                    #       that default to disabled.
                    classifier: false,
                    filesync: false}
+      @state = {}
     end
 
     # Update configuration of the settings object
@@ -219,9 +221,14 @@ module SupportScript
 
     def_delegators :@config, :log
     def_delegators :@config, :settings
+    def_delegators :@config, :state
 
     def initialize_configable
       @config = Settings.instance
+    end
+
+    def noop?
+      @config.settings[:noop]
     end
   end
 
@@ -428,6 +435,322 @@ module SupportScript
     # @return [true, false]
     def enabled?
       @enabled
+    end
+  end
+
+  # Helper functions for gnerating diagnostic output
+  #
+  # The methods in this module provide an API for executing commands, returing
+  # results, copying files, and otherwise generating diagnostic output. This
+  # module should be included along with the {Configable} module and depends
+  # on state initialized by {Runner#setup}
+  module DiagnosticHelpers
+    #===========================================================================
+    # Utilities
+    #===========================================================================
+
+    # Display a message.
+    def display(info = '')
+      $stdout.puts(info)
+    end
+
+    # Display an error message.
+    def display_warning(info = '')
+      log.warn(info)
+    end
+
+    # Display an error message, and exit.
+    def fail_and_exit(datum)
+      log.error(datum)
+      exit 1
+    end
+
+    # Execute a command line and return the result
+    #
+    # @param command_line [String] The command line to execute.
+    # @param timeout [Integer] Amount of time, in sections, allowed for
+    #   the command line to complete. Defaults to 0 which means no
+    #   time limit.
+    #
+    # @return [String] STDOUT from the command.
+    # @return [String] An empty string, if an ExecutionFailure is raised
+    #   when launching the command.
+    def exec_return_result(command_line, timeout = 0)
+      options = { timeout: timeout }
+      Facter::Core::Execution.execute(command_line, options)
+    rescue Facter::Core::Execution::ExecutionFailure => e
+      log.error('exec_return_result: command failed: %{command_line} with error: %{error}' %
+                {command_line: command_line,
+                 error: e.message})
+      ''
+    end
+
+    # Execute a command line and return true or false
+    #
+    # @param (see #exec_return_result)
+    #
+    # @return [true] If the command completes with an exit code of zero.
+    # @return [false] If the command completes win a non-zero exit code or
+    #   an ExecutionFailure is raised.
+    def exec_return_status(command_line, timeout = 0)
+      options = { timeout: timeout }
+      Facter::Core::Execution.execute(command_line, options)
+      $?.to_i.zero?
+    rescue Facter::Core::Execution::ExecutionFailure => e
+      log.error('exec_return_status: command failed: %{command_line} with error: %{error}' %
+                {command_line: command_line,
+                 error: e.message})
+      false
+    end
+
+    # Execute a command line or raise an error
+    #
+    # @param (see #exec_return_result)
+    #
+    # @return [void]
+    # @raise [Facter::Core::Execution::ExecutionFailure] If the command
+    #   exits with a non-zero code or a ExecutionFailure is raised during
+    #   execution.
+    def exec_or_fail(command_line, timeout = 0)
+      options = { timeout: timeout }
+      Facter::Core::Execution.execute(command_line, options)
+      unless $?.to_i.zero?
+        raise Facter::Core::Execution::ExecutionFailure,
+              'exec_or_fail: command failed: %{command_line} with status: %{status}' %
+              {command_line: command_line,
+               status: $?.to_i}
+      end
+    end
+
+    # Test for command existance
+    #
+    # @param command [String] The name of an executable
+    #
+    # @return [String] Expanded path to the executable if it exists and is
+    #   executable.
+    # @return [nil] If no executable matching `command` can be found in the
+    #   `PATH`.
+    def executable?(command)
+      Facter::Core::Execution.which(command)
+    end
+
+    # Test for command option existence
+    #
+    # @param command [String] The name of a command to test
+    # @param option [String] the name of an option to test
+    #
+    # @return [true] If the `option` can be found in the `--help` output
+    #   or manpage for the command.
+    # @return [false] If the `option` is not found, or an ExecutionFailure
+    #   is raised.
+    def documented_option?(command, option)
+      if help_option?(command)
+        command_line = "#{command} --help | grep -q -- '#{option}' > /dev/null 2>&1"
+      else
+        command_line = "man #{command}    | grep -q -- '#{option}' > /dev/null 2>&1"
+      end
+      Facter::Core::Execution.execute(command_line)
+      $?.to_i.zero?
+    rescue Facter::Core::Execution::ExecutionFailure => e
+      false
+    end
+
+    # Test whether command responds to --help
+    #
+    # @param command [String] The name of a command to test
+    #
+    # @return [true] If the command exits successfully when invoked with `--help`.
+    # @return [false] If the command exits with a non-zero code when invoked
+    #   with `--help`, or an ExecutionFailure is raised.
+    def help_option?(command)
+      command_line = "#{command} --help > /dev/null 2>&1"
+      Facter::Core::Execution.execute(command_line)
+      $?.to_i.zero?
+    rescue Facter::Core::Execution::ExecutionFailure => e
+      false
+    end
+
+    # Pretty Format JSON
+    #
+    # Parses a string of JSON, optionally removes blacklisted top-level keys,
+    # and returns the output as a pretty-printed string.
+    #
+    # @param text [String] A string of JSON data.
+    # @param blacklist [Array<String>] A list of keys to remove from the
+    #   output.
+    #
+    # @return [String] Pretty printed JSON.
+    # @return [String] An empty string, if parsing or generation fails.
+    def pretty_json(text, blacklist = [])
+      return text if text == ''
+      begin
+        json = JSON.parse(text)
+      rescue JSON::ParserError
+        log.error('pretty_json: unable to parse json')
+        return ''
+      end
+      blacklist.each do |blacklist_key|
+        if json.is_a?(Array)
+          json.each do |item|
+            if item.is_a?(Hash)
+              item.delete(blacklist_key) if item.key?(blacklist_key)
+            end
+          end
+        end
+        if json.is_a?(Hash)
+          json.delete(blacklist_key) if json.key?(blacklist_key)
+        end
+      end
+      begin
+        JSON.pretty_generate(json)
+      rescue JSON::GeneratorError
+        log.error('pretty_json: unable to generate json')
+        return ''
+      end
+    end
+
+
+    #===========================================================================
+    # Output
+    #===========================================================================
+
+    # Execute a command and append the results to an output file
+    #
+    # @param command_line [String] Command line to execute.
+    # @param dst [String] Destination directory for output.
+    # @param file [String] File under `dst` where output should be appended.
+    # @param timeout [Integer] Optional number of seconds to allow for
+    #   command execution. Defaults to 0 which disables the timeout.
+    #
+    # @return [true] If the command completes successfully.
+    # @return [false] If the command cannot be found, exits with a non-zero
+    #   code, or there is an error creating the output path.
+    def exec_drop(command_line, dst, file, timeout = 0)
+      command = command_line.split(' ')[0]
+      dst_file_path = File.join(dst, file)
+      command_line = %(#{command_line} 2>&1 >> '#{dst_file_path}')
+      unless executable?(command)
+        log.error('exec_drop: command not found: %{command} cannot execute: %{command_line}' %
+                  {command: command,
+                   command_line: command_line})
+        return false
+      end
+      log.debug('exec_drop: appending output of: %{command_line} to: %{dst_file_path}' %
+                {command_line: command_line,
+                 dst_file_path: dst_file_path})
+      return if noop?
+      return false unless create_path(dst)
+      exec_return_status(command_line, timeout)
+    end
+
+    # Append data to an output file
+    #
+    # @param data [String] Data to append.
+    # @param dst [String] Destination directory for output.
+    # @param file [String] File under `dst` where data should be appended.
+    #
+    # @return [true] If data output succeeds.
+    # @return [false] If there is an error creating the output path.
+    def data_drop(data, dst, file)
+      dst_file_path = File.join(dst, file)
+      log.debug('data_drop: appending to: %{dst_file_path}' %
+                {dst_file_path: dst_file_path})
+
+      return if noop?
+      return false unless create_path(dst)
+      File.open(dst_file_path, 'a') { |file| file.puts(data) }
+      true
+    end
+
+    # Copy directories or files to a destination directory
+    #
+    # @param src [String] Source directory for output.
+    # @param dst [String] Destination directory for output.
+    # @param recreate_parent_path [Boolean] Whether to re-create parent
+    #   directories of files in `src` underneath `dst`. Defaults to `true`.
+    #
+    # @return [true] If file copying suceeds.
+    # @return [false] If the copy command exits wiht an error or if
+    #   there is an error creating the output path.
+    def copy_drop(src, dst, recreate_parent_path = true)
+      parents_option = recreate_parent_path ? ' --parents' : ''
+      recursive_option = File.directory?(src) ? ' --recursive' : ''
+      command_line = %(cp --dereference --preserve #{parents_option} #{recursive_option} '#{src}' '#{dst}')
+      unless File.readable?(src)
+        log.error('copy_drop: source not readable: %{src}' %
+                  {src: src})
+        return false
+      end
+      log.debug('copy_drop: copying: %{src} to: %{dst}' %
+                {src: src,
+                 dst: dst})
+      return if noop?
+      return false unless create_path(dst)
+      exec_return_status(command_line)
+    end
+
+    # Copy files newer than a specified age to a destination directory
+    #
+    # @param src [String] Source directory for output.
+    # @param dst [String] Destination directory for output.
+    # @param age [Integer] Specifies maximum age, in days, to filter list
+    #   of copied files.
+    # @param recreate_parent_path [Boolean] Whether to re-create parent
+    #   directories of files in `src` underneath `dst`. Defaults to `true`.
+    #
+    # @return (see #copy_drop)
+    def copy_drop_mtime(src, dst, age, recreate_parent_path = true)
+      parents_option = recreate_parent_path ? ' --parents' : ''
+      command_line = %(find '#{src}' -type f -mtime -#{age} | xargs --no-run-if-empty cp --preserve #{parents_option} --target-directory '#{dst}')
+      unless File.readable?(src)
+        log.error('copy_drop_mtime: source not readable: %{src}' %
+                  {src: src})
+        return false
+      end
+      log.debug('copy_drop_mtime: copying files newer than %{age} days from: %{src} to: %{dst}' %
+                {age: age,
+                 src: src,
+                 dst: dst})
+      return if noop?
+      return false unless create_path(dst)
+      exec_return_status(command_line)
+    end
+
+    # Copy files with names matching a glob to a destination directory
+    #
+    # @param src [String] Source directory for output.
+    # @param dst [String] Destination directory for output.
+    # @param glob [String] Glob expression used to filter list of copied files.
+    # @param recreate_parent_path [Boolean] Whether to re-create parent
+    #   directories of files in `src` underneath `dst`. Defaults to `true`.
+    #
+    # @return (see #copy_drop)
+    def copy_drop_match(src, dst, glob, recreate_parent_path = true)
+      parents_option = recreate_parent_path ? ' --parents' : ''
+      command_line = %(find '#{src}' -type f -name '#{glob}' | xargs --no-run-if-empty cp --preserve #{parents_option} --target-directory '#{dst}')
+      unless File.readable?(src)
+        log.error('copy_drop_match: source not readable: %{src}' %
+                  {src: src})
+        return false
+      end
+      log.debug('copy_drop_match: copying files matching %{glob} from: %{src} to: %{dst}' %
+                {glob: glob,
+                 src: src,
+                 dst: dst})
+      return if noop?
+      return false unless create_path(dst)
+      exec_return_status(command_line)
+    end
+
+    # Recursively create a directory
+    #
+    # @param path [String] Path to the directory to create.
+    #
+    # @return [true] If directory creation is successful.
+    # @return [false] If directory creation fails.
+    def create_path(path)
+      return true if File.directory?(path)
+      exec_return_status("mkdir --parents '#{path}'")
     end
   end
 
@@ -746,6 +1069,7 @@ module PuppetX
     # Collects diagnostic information about Puppet Enterprise for Support.
     class Support
       include SupportScript::Configable
+      include SupportScript::DiagnosticHelpers
 
       def initialize(**options)
         @doc_url = 'https://puppet.com/docs/pe/2018.1/getting_support_for_pe.html#the-pe-support-script'
@@ -772,9 +1096,6 @@ module PuppetX
 
         # Cache user lookups.
         @users = {}
-
-        # Count the number of appends to each drop file: used to output progress.
-        @saves = {}
       end
 
       def run
@@ -1330,120 +1651,8 @@ module PuppetX
       # Output
       #=========================================================================
 
-      # Execute a command and append the results to a file in the destination directory.
-      #
-      # Rather than testing for the existance of a related feature the calling scope,
-      # test for the existance of the command in the method.
-
-      def exec_drop(command_line, dst, file, timeout = 0)
-        command = command_line.split(' ')[0]
-        unless command
-          logline "exec_drop: command not found in: #{command_line}"
-          return false
-        end
-        file_name = "#{dst}/#{file}"
-        command_line = %(#{command_line} 2>&1 >> "#{file_name}")
-        unless executable?(command)
-          logline "exec_drop: command not found: #{command} cannot execute: #{command_line}"
-          return false
-        end
-        logline "exec_drop: #{command_line}"
-        if @saves.key?(file_name)
-          @saves[file_name] = @saves[file_name] + 1
-          display " ** Append: #{file} # #{@saves[file_name]}"
-        else
-          display " ** Saving: #{file}"
-          @saves[file_name] = 1
-        end
-        display
-        return if noop?
-        return false unless create_path(dst)
-        exec_return_status(command_line, timeout)
-      end
-
-      # Append data to a file in the destination directory.
-
-      def data_drop(data, dst, dst_file)
-        dst_file_path = "#{dst}/#{dst_file}"
-        logline "data_drop: to #{dst_file_path}"
-        if @saves.key?(dst_file_path)
-          @saves[dst_file_path] = @saves[dst_file_path] + 1
-          display " ** Append: #{dst_file} # #{@saves[dst_file_path]}"
-        else
-          display " ** Saving: #{dst_file}"
-          @saves[dst_file_path] = 1
-        end
-        display
-        return if noop?
-        return false unless create_path(dst)
-        # data = 'This file is empty.' if data == ''
-        File.open(dst_file_path, 'a') { |file| file.puts(data) }
-      end
-
-      # Copy directories or files to the destination directory, recreating the parent path by default.
-      #
-      # Rather than testing for the existance of the source in the calling scope,
-      # test for the existance of the source in the method.
-
-      def copy_drop(src, dst, recreate_parent_path = true)
-        parents_option = recreate_parent_path ? ' --parents' : ''
-        recursive_option = File.directory?(src) ? ' --recursive' : ''
-        command_line = %(cp --dereference --preserve #{parents_option} #{recursive_option} "#{src}" "#{dst}")
-        unless File.exist?(src)
-          logline "copy_drop: source not found: #{src}"
-          return false
-        end
-        logline "copy_drop: #{command_line}"
-        display " ** Saving: #{src}"
-        display
-        return if noop?
-        return false unless create_path(dst)
-        exec_return_status(command_line)
-      end
-
-      # Copy files newer than age to the destination directory, recreating the parent path by default.
-
-      def copy_drop_mtime(src, dst, age, recreate_parent_path = true)
-        parents_option = recreate_parent_path ? ' --parents' : ''
-        command_line = %(find #{src} -type f -mtime -#{age} | xargs --no-run-if-empty cp --preserve #{parents_option} --target-directory #{dst})
-        unless File.exist?(src)
-          logline "copy_drop_mtime: source not found: #{src}"
-          return false
-        end
-        logline "copy_drop_mtime: #{command_line}"
-        display " ** Saving: #{src} files newer than #{age} days"
-        display
-        return if noop?
-        return false unless create_path(dst)
-        exec_return_status(command_line)
-      end
-
-      # Copy files with names matching a glob to the destination directory, recreating the parent path by default.
-
-      def copy_drop_match(src, dst, glob, recreate_parent_path = true)
-        parents_option = recreate_parent_path ? ' --parents' : ''
-        command_line = %(find #{src} -type f -name "#{glob}" | xargs --no-run-if-empty cp --preserve #{parents_option} --target-directory #{dst})
-        unless File.exist?(src)
-          logline "copy_drop_match: source not found: #{src}"
-          return false
-        end
-        logline "copy_drop_match: #{command_line}"
-        display " ** Saving: #{src} files with a name matching '#{glob}'"
-        display
-        return if noop?
-        return false unless create_path(dst)
-        exec_return_status(command_line)
-      end
-
-      # Create a path.
-
-      def create_path(path)
-        exec_return_status(%(mkdir --parents "#{path}"))
-      end
-
       # Create a symlink to allow SOScleaner to redact hostnames in the output.
       # https://github.com/RedHatGov/soscleaner
-
       def sos_clean(file, link)
         command = %(ln --relative --symbolic "#{file}" "#{link}")
         logline "sos_clean: #{command}"
@@ -1964,133 +2173,10 @@ module PuppetX
       # Utilities
       #=========================================================================
 
-      # Display a message.
-
-      def display(info = '')
-        puts info
-      end
-
-      # Display an error message.
-
-      def display_warning(info = '')
-        warn info
-      end
-
-      # Display an error message, and exit.
-
-      def fail_and_exit(datum)
-        display_warning(datum)
-        exit 1
-      end
-
       # Log to a log file.
       # Instance Variables: @log_file
-
       def logline(datum)
         File.open(@log_file, 'a') { |file| file.puts(datum) }
-      end
-
-      # Execute a command line and return the result or an empty string.
-      # Used by methods that collect diagnostics.
-
-      def exec_return_result(command_line, timeout = 0)
-        options = { timeout: timeout }
-        Facter::Core::Execution.execute(command_line, options)
-      rescue Facter::Core::Execution::ExecutionFailure => e
-        logline "error: exec_return_result: command failed: #{command_line} with error: #{e}"
-        display "    Command failed: #{command_line} with error: #{e}"
-        display
-        ''
-      end
-
-      # Execute a command line and return true or false.
-
-      def exec_return_status(command_line, timeout = 0)
-        options = { timeout: timeout }
-        Facter::Core::Execution.execute(command_line, options)
-        $?.to_i.zero?
-      rescue Facter::Core::Execution::ExecutionFailure => e
-        logline "error: exec_return_status: command failed: #{command_line} with error: #{e}"
-        display "    Command failed: #{command_line} with error: #{e}"
-        display
-        false
-      end
-
-      # Execute a command line or fail.
-      # Used by methods that manage the drop directory or output archive.
-
-      def exec_or_fail(command_line, timeout = 0)
-        options = { timeout: timeout }
-        Facter::Core::Execution.execute(command_line, options)
-        unless $?.to_i.zero?
-          raise Facter::Core::Execution::ExecutionFailure, $?
-        end
-      rescue Facter::Core::Execution::ExecutionFailure => e
-        logline "error: exec_or_fail: command failed: #{command_line} with error: #{e}"
-        fail_and_exit("Command failed: #{command_line} with error: #{e}")
-      end
-
-      # Test for command existance.
-
-      def executable?(command)
-        Facter::Core::Execution.which(command)
-      end
-
-      # Test for command option existance.
-
-      def documented_option?(command, option)
-        if help_option?(command)
-          command_line = "#{command} --help | grep -q -- '#{option}' > /dev/null 2>&1"
-        else
-          command_line = "man #{command}    | grep -q -- '#{option}' > /dev/null 2>&1"
-        end
-        Facter::Core::Execution.execute(command_line)
-        $?.to_i.zero?
-      rescue Facter::Core::Execution::ExecutionFailure => e
-        false
-      end
-
-      def help_option?(command)
-        command_line = "#{command} --help > /dev/null 2>&1"
-        Facter::Core::Execution.execute(command_line)
-        $?.to_i.zero?
-      rescue Facter::Core::Execution::ExecutionFailure => e
-        false
-      end
-
-      # Test for noop mode.
-      def noop?
-        settings[:noop] == true
-      end
-
-      # Pretty Format JSON, minus a list of blacklisted keys.
-
-      def pretty_json(text, blacklist = [])
-        return text if text == ''
-        begin
-          json = JSON.parse(text)
-        rescue JSON::ParserError
-          logline 'error: pretty_json: unable to parse json'
-          return
-        end
-        blacklist.each do |blacklist_key|
-          if json.is_a?(Array)
-            json.each do |item|
-              if item.is_a?(Hash)
-                item.delete(blacklist_key) if item.key?(blacklist_key)
-              end
-            end
-          end
-          if json.is_a?(Hash)
-            json.delete(blacklist_key) if json.key?(blacklist_key)
-          end
-        end
-        begin
-          JSON.pretty_generate(json)
-        rescue JSON::GeneratorError
-          logline 'error: pretty_json: unable to generate json'
-          return
-        end
       end
 
       #=========================================================================
