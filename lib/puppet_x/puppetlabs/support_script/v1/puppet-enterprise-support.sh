@@ -806,6 +806,7 @@ get_proc_files() {
   local pidarray=()
   local pidfile
 
+  pidarray+=("$(pgrep -f "puppetlabs/ace-server" || true)")
   pidarray+=("$(pgrep -f "puppetlabs/bolt-server" || true)")
   if [ -e "/var/run/puppetlabs/agent.pid" ]; then
     pidarray+=("$(cat /var/run/puppetlabs/agent.pid)")
@@ -904,7 +905,7 @@ list_all_services() {
     rhel|centos|sles|debian|ubuntu)
       if (pidof systemd &> /dev/null); then
         run_diagnostic "systemctl list-units" "system/services.txt"
-        for service in pe-puppetserver pe-bolt-server pe-console-services pe-nginx pe-orchestration-services pe-postgresql pe-puppetdb pe-puppetserver; do
+        for service in pe-puppetserver pe-ace-server pe-bolt-server pe-console-services pe-nginx pe-orchestration-services pe-postgresql pe-puppetdb pe-puppetserver; do
           { systemctl status "${service}" || true; printf '=%.0s' {1..100}; printf '\n'; } >> system/systemctl-status.txt
         done
       else
@@ -945,6 +946,7 @@ cgroup_data() {
             pe-postgresql \
             pe-puppetdb \
             pe-puppetserver \
+            pe-ace-server \
             pe-bolt-server \
             pe-orchestration-services; do
             if [ -d /sys/fs/cgroup/"${FS}"/system.slice/"${SERVICE}".service ]; then
@@ -1013,6 +1015,7 @@ pe_logs() {
   )
 
   pe_services=(
+    'ace-server'
     'bolt-server'
     'nginx'
     'puppetserver'
@@ -1168,6 +1171,8 @@ gather_enterprise_files() {
   # Whitelist of configuration files and directories to copy. Each entry is
   # relative to /etc/puppetlabs.
   pe_config_files=(
+    'ace-server/conf.d'
+
     'activemq/activemq.xml'
     'activemq/jetty.xml'
     'activemq/log4j.properties'
