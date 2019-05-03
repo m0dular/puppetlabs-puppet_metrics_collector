@@ -84,6 +84,7 @@ module PuppetX
 
       def puppet_enterprise_services_list
         [
+          'pe-ace-server',
           'pe-activemq',
           'pe-bolt-server',
           'pe-console-services',
@@ -112,6 +113,7 @@ module PuppetX
 
       def puppet_enterprise_config_list
         files = [
+          'ace-server/conf.d',
           'activemq/activemq.xml',
           'activemq/jetty.xml',
           'activemq/log4j.properties',
@@ -556,6 +558,7 @@ module PuppetX
         FileUtils.chmod_R('u+wX', "#{scope_directory}/sys") if File.exist?("#{scope_directory}/sys")
 
         pids = Array.new
+        pids.push(exec_return_result('pgrep -f "puppetlabs/ace-server"'))
         pids.push(exec_return_result('pgrep -f "puppetlabs/bolt-server"'))
         if(File.exists?('/var/run/puppetlabs/agent.pid'))
           pids.push(File.read('/var/run/puppetlabs/agent.pid'))
