@@ -1737,6 +1737,12 @@ filesync_state() {
   fi
 }
 
+filebucket_state() {
+  if [ -x /opt/puppetlabs/server/data/puppetserver/bucket ]; then
+    run_diagnostic "du -sh /opt/puppetlabs/server/data/puppetserver/bucket" "resources/filebucket_size_from_du.txt"
+  fi
+}
+
 # Collects output from the PuppetDB status endpoints
 #
 # Global Variables Used:
@@ -1994,6 +2000,7 @@ if is_package_installed 'pe-puppetserver'; then
   puppetserver_environments
   module_listing
   filesync_state
+  filebucket_state
 fi
 
 if is_package_installed 'pe-console-services'; then
