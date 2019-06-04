@@ -1,7 +1,5 @@
 require 'spec_helper'
 
-require 'puppet_x/puppetlabs/support_script/v3/puppet-enterprise-support.rb'
-
 def suppress_standard_output
   allow(STDOUT).to receive(:puts)
 end

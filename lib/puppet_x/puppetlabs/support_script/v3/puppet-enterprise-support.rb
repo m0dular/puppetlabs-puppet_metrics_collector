@@ -2,12 +2,464 @@
 
 require 'json'
 require 'tempfile'
+require 'forwardable'
 
 # Test nodes do not meet the minimum system requirements for tune to optimize.
 if ENV['BEAKER_TESTING']
   ENV['TEST_CPU'] = '8'
   ENV['TEST_RAM'] = '16384'
 end
+
+
+module PuppetX
+module Puppetlabs
+# Diagnostic tools for Puppet Enterprise
+#
+# This module contains components for running diagnostic checks on Puppet
+# Enterprise installations.
+module SupportScript
+  # Holds configuration and state shared by other objects
+  #
+  # Classes that need access to state managed by the Settings class should
+  # include the {Configable} module, which provides access to a singleton
+  # instance shared by all objects.
+  class Settings
+    attr_accessor :settings
+
+    def self.instance
+      @instance ||= new
+    end
+
+    def initialize
+      @settings = {enable: [],
+                   disable: [],
+                   only: []}
+    end
+
+    # Update configuration of the settings object
+    #
+    # @param options [Hash] a hash of options to merge into the existing
+    #   configuration.
+    def configure(**options)
+      options.each do |key, value|
+        case key
+        when :enable, :disable, :only
+          unless value.is_a?(Array)
+            raise ArgumentError, 'The %{key} option must be set to an Array value. Got a value of type %{class}.' %
+              {key: key,
+               class: value.class}
+          end
+        end
+
+        @settings[key] = value
+      end
+    end
+  end
+
+  # Mix-in module for accessing shared settings and state
+  #
+  # Including the `Configable` module in a class provides access to a shared
+  # state object returned by {Settings.instance}. Including the `Configable`
+  # module also defines helper methods to access various components of the
+  # `Settings` instance as if they were local instance variables.
+  module Configable
+    extend Forwardable
+
+    def_delegators :@config, :settings
+
+    def initialize_configable
+      @config = Settings.instance
+    end
+  end
+
+  # A restricting tag for diagnostics
+  #
+  # A confine instance  may be initialized with with a logical check and
+  # resolves the check on demand to a `true` or `false` value.
+  class Confine
+    attr_accessor :fact, :values
+
+    # Create a new confine instance
+    #
+    # @param fact [Symbol] Name of the fact
+    # @param values [Array] One or more values to match against. They can be
+    #   any type that provides a `===` method.
+    # @param block [Proc] Alternatively a block can be supplied as a check.
+    #   The fact value will be passed as the argument to the block. If the
+    #   block returns true then the fact will be enabled, otherwise it will
+    #   be disabled.
+    def initialize(fact = nil, *values, &block)
+      raise ArgumentError, "The fact name must be provided" unless fact or block_given?
+      if values.empty? and not block_given?
+        raise ArgumentError, "One or more values or a block must be provided"
+      end
+      @fact = fact
+      @values = values
+      @block = block
+    end
+
+    def to_s
+      return @block.to_s if @block
+      return "'%s' '%s'" % [@fact, @values.join(",")]
+    end
+
+    # Convert a value to a canonical form
+    #
+    # This method is used by {true?} to normalize strings and symbol values
+    # prior to comparing them via `===`.
+    def normalize(value)
+      value = value.to_s if value.is_a?(Symbol)
+      value = value.downcase if value.is_a?(String)
+      value
+    end
+
+    # Evaluate the fact, returning true or false.
+    def true?
+      if @block and not @fact then
+        begin
+          return !! @block.call
+        rescue StandardError => error
+          # TODO: Replace with logger call.
+          $stderr.puts "Confine raised #{error.class} #{error}"
+          return false
+        end
+      end
+
+      unless fact = Facter[@fact]
+        # TODO: Replace with logger call.
+        $stderr.puts "No fact for %s" % @fact
+        return false
+      end
+      value = normalize(fact.value)
+
+      return false if value.nil?
+
+      if @block then
+        begin
+          return !! @block.call(value)
+        rescue StandardError => error
+          # TODO: Replace with logger call.
+          $stderr.puts "Confine raised #{error.class} #{error}"
+          return false
+        end
+      end
+
+      @values.any? { |v| normalize(v) === value }
+    end
+  end
+
+  # Mix-in module for declaring and evaluating confines
+  #
+  # Including this module in another class allows instances of that class
+  # to declare {Confine} instances which are then evaluated with a call to
+  # the {suitable?} method. The module also provides a simple enable/disable
+  # switch that can be set by calling {#enabled=} and checked by calling
+  # {#enabled?}
+  module Confinable
+    # Initalizes object state used by the Confinable module
+    #
+    # This method should be called from the `initialize` method of any class
+    # that includes the `Confinable` module.
+    #
+    # @return [void]
+    def initialize_confinable
+      @confines = []
+      @enabled = true
+    end
+
+    # Sets the conditions for this instance to be used.
+    #
+    # This method accepts multiple forms of arguments. Each call to this method
+    # adds a new {Confine} instance that must pass in order for {suitable?} to
+    # return `true`.
+    #
+    # @return [void]
+    #
+    # @overload confine(confines)
+    #   Confine a fact to a specific fact value or values. This form takes a
+    #   hash of fact names and values. Every fact must match the values given
+    #   for that fact, otherwise this resolution will not be considered
+    #   suitable. The values given for a fact can be an array, in which case
+    #   the value of the fact must be in the array for it to match.
+    #
+    #   @param [Hash{String,Symbol=>String,Array<String>}] confines set of facts
+    #     identified by the hash keys whose fact value must match the
+    #     argument value.
+    #
+    #   @example Confining to a single value
+    #       confine :kernel => 'Linux'
+    #
+    #   @example Confining to multiple values
+    #       confine :osfamily => ['RedHat', 'SuSE']
+    #
+    # @overload confine(confines, &block)
+    #   Confine to logic in a block with the value of a specified fact yielded
+    #   to the block.
+    #
+    #   @param [String,Symbol] confines the fact name whose value should be
+    #     yielded to the block
+    #   @param [Proc] block determines suitability. If the block evaluates to
+    #     `false` or `nil` then the confined object will not be evaluated.
+    #
+    #   @yield [value] the value of the fact identified by `confines`
+    #
+    #   @example Confine to a host with an ipaddress in a specific subnet
+    #       confine :ipaddress do |addr|
+    #         require 'ipaddr'
+    #         IPAddr.new('192.168.0.0/16').include? addr
+    #       end
+    #
+    # @overload confine(&block)
+    #   Confine to a block. The object will be evaluated only if the block
+    #   evaluates to something other than `false` or `nil`.
+    #
+    #   @param [Proc] block determines suitability. If the block
+    #     evaluates to `false` or `nil` then the confined object will not be
+    #     evaluated.
+    #
+    #   @example Confine to systems with a specific file
+    #       confine { File.exist? '/bin/foo' }
+    def confine(confines = nil, &block)
+      case confines
+      when Hash
+        confines.each do |fact, values|
+          @confines.push Confine.new(fact, *values)
+        end
+      else
+        if block
+          if confines
+            @confines.push Confine.new(confines, &block)
+          else
+            @confines.push Confine.new(&block)
+          end
+        else
+        end
+      end
+    end
+
+    # Check all conditions defined for the confined object
+    #
+    # Checks each condition defined through a call to {#confine}.
+    #
+    # @return [false] if any condition evaluates to `false`.
+    # @return [true] all conditions evalute to `true` or no conditions
+    #   were defined.
+    def suitable?
+      @confines.all? { |confine| confine.true? }
+    end
+
+    # Toggle the enabled status of the confined object
+    #
+    # @param value [true, false]
+    # @return [void]
+    def enabled=(value)
+      unless value.is_a?(TrueClass) || value.is_a?(FalseClass)
+        raise ArgumentError, 'The value of enabled must be set to true or false. Got a value of type %{class}.' %
+          {class: value.class}
+      end
+
+      @enabled=value
+    end
+
+    # Check the enabled status of the confined object
+    #
+    # @return [true, false]
+    def enabled?
+      @enabled
+    end
+  end
+
+  # Base class for diagnostic logic
+  #
+  # Instances of classes inheriting from `Check` represent diagnostics to
+  # be executed. Subclasses may define a {#setup} method that can use
+  # {Confinable#confine} to constrain when checks are executed. All subclasses
+  # must define a {#run} method that executes the diagnostic.
+  #
+  # @abstract
+  class Check
+    include Confinable
+
+    # Initialize a new check
+    #
+    # @note This method should not be overriden by child classes. Override
+    #   the #{setup} method instead.
+    # @return [void]
+    def initialize(parent = nil, **options)
+      initialize_confinable
+      @parent = parent
+      @name = options[:name]
+
+      setup(**options)
+
+      if @name.nil?
+        raise ArgumentError, '%{class} must be initialized with a name: parameter.' %
+          {class: self.class.name}
+      end
+    end
+
+    # Return a string representing the name of this check
+    #
+    # If initialized with a parent object, the return value of calling
+    # `name` on the parent is pre-pended as a namespace.
+    #
+    # @return [String]
+    def name
+      return @resolved_name if defined?(@resolved_name)
+
+      @resolved_name = if @parent.nil? || @parent.name.empty?
+                         @name
+                       else
+                         [@parent.name, @name].join('::')
+                       end
+
+      @resolved_name.freeze
+    end
+
+    # Initialize variables and logic used by the check
+    #
+    # @param [Hash] options a hash of configuration options that can be used
+    #   to initialize the check.
+    # @return [void]
+    def setup(**options)
+    end
+
+    # Execute the diagnostic represented by the check
+    #
+    # @return [void]
+    def run
+      raise NotImplementedError, 'A subclass of Check must provide a run method.'
+    end
+  end
+
+  # Base class for grouping and managing diagnostics
+  #
+  # Instances of classes inheriting from `Scope` managage the configuration
+  # and execution of a setion of children, which can be {Check} objects or
+  # other `Scope` objects. Subclasses may define a {#setup} method that can use
+  # {Confinable#confine} to constrain when the scope executes.
+  class Scope
+    include Configable
+    include Confinable
+
+    # Data for initializing children
+    #
+    # @return [Array<Array(Class, Hash)>]
+    def self.child_specs
+      @child_specs ||= []
+    end
+
+    # Add a child to be initialized by instances of this scope
+    #
+    # @param [Class] klass the class from which the child should be
+    #   initialized.
+    # @param [Hash] options a hash of options to pass when initializing
+    #   the child.
+    # @return [void]
+    def self.add_child(klass, **options)
+      child_specs.push([klass, options])
+    end
+
+    # Initialize a new scope
+    #
+    # @note This method should not be overriden by child classes. Override
+    #   the #{setup} method instead.
+    # @return [void]
+    def initialize(parent = nil, **options)
+      initialize_configable
+      initialize_confinable
+      @parent = parent
+      @name = options[:name]
+
+      setup(**options)
+      if @name.nil?
+        raise ArgumentError, '%{class} must be initialized with a name: parameter.' %
+          {class: self.class.name}
+      end
+
+      initialize_children
+    end
+
+    # Return a string representing the name of this scope
+    #
+    # If initialized with a parent object, the return value of calling
+    # `name` on the parent is pre-pended as a namespace.
+    #
+    # @return [String]
+    def name
+      return @resolved_name if defined?(@resolved_name)
+
+      @resolved_name = if @parent.nil? || @parent.name.empty?
+                         @name
+                       else
+                         [@parent.name, @name].join('::')
+                       end
+
+      @resolved_name.freeze
+    end
+
+    # Execute run logic for suitable children
+    #
+    # This method loops over all child instances and calls `run` on each
+    # instance for which {Confinable#suitable?} returns `true`.
+    #
+    # @return [void]
+    def run
+      # TODO: Add logging to mark when run starts and finishes.
+      @children.each do |child|
+        next unless child.enabled? && child.suitable?
+        # TODO: Add logging to mark when child run starts and finishes.
+        begin
+          child.run
+        rescue => e
+          # TODO: Log errors.
+        end
+      end
+    end
+
+    # Initialize variables and logic used by the scope
+    #
+    # @param [Hash] options a hash of configuration options that can be used
+    #   to initialize the scope.
+    # @return [void]
+    def setup(**options)
+    end
+
+    private
+
+    def initialize_children
+      enable_list = (settings[:only] + settings[:enable]).select {|e| e.start_with?(name)}
+
+      @children = self.class.child_specs.map do |(klass, opts)|
+        child = klass.new(self, **opts)
+        child.enabled = false if (not self.enabled?)
+
+        if (not settings[:only].empty?) && child.enabled?
+          # Disable children unless they are explicitly enabled, or one of
+          # their parents is explicitly enabled.
+          child.enabled = false unless enable_list.any? {|e| child.name.start_with?(e)}
+        end
+
+        if (klass < Scope)
+          # Enable Scopes if they are explicitly enabled, or one of their
+          # children is explicitly enabled.
+          child.enabled = enable_list.any? {|e| e.start_with?(child.name)}
+        elsif (klass < Check)
+          # Enable Checks if they are explicitly enabled.
+          child.enabled = true if enable_list.include?(child.name)
+        end
+
+        # Disable anything explicitly listed.
+        child.enabled = false if settings[:disable].include?(child.name)
+
+        child
+      end
+    end
+  end
+end
+end
+end
+
 
 module PuppetX
   module Puppetlabs
@@ -1501,6 +1953,7 @@ SSHKNOWNHOSTS
     end
   end
 end
+
 
 # The following allows this class to be executed as a standalone script.
 
