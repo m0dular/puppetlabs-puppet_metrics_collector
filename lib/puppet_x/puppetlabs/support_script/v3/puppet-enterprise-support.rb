@@ -828,6 +828,10 @@ module PuppetX
           copy_drop(filesync_directory, @drop_directory)
         end
 
+        # Collect Puppet Enterprise File Bucket diagnostics.
+        filebucket_directory = '/opt/puppetlabs/server/data/puppetserver/bucket'
+        exec_drop("du -sh #{filebucket_directory}", scope_directory, 'filebucket_size_from_du.txt') if File.directory?(filebucket_directory)
+
         # Collect Puppet Enterprise Infrastructure diagnostics.
         exec_drop("#{@paths[:puppetlabs_bin]}/puppet-infrastructure status --format json", scope_directory, 'puppet_infra_status.json')
         exec_drop("#{@paths[:puppetlabs_bin]}/puppet-infrastructure tune",                 scope_directory, 'puppet_infra_tune.txt')
