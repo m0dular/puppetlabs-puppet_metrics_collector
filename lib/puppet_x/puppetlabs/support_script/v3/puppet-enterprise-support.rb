@@ -744,8 +744,8 @@ module PuppetX
         exec_drop("#{@paths[:puppet_bin]}/puppet facts --color=false --debug", scope_directory, 'puppet_facts_debug.txt')
 
         # Collect Puppet and Puppet Server gems.
-        exec_drop("#{@paths[:puppet_bin]}/gem --list --local",                  scope_directory, 'puppet_gem_list.txt')
-        exec_drop("#{@paths[:puppetlabs_bin]}/puppetserver gem --list --local", scope_directory, 'puppetserver_gem_list.txt')
+        exec_drop("#{@paths[:puppet_bin]}/gem list --local",                  scope_directory, 'puppet_gem_list.txt')
+        exec_drop("#{@paths[:puppetlabs_bin]}/puppetserver gem list --local", scope_directory, 'puppetserver_gem_list.txt')
 
         # Collect Puppet modules.
         exec_drop("#{@paths[:puppet_bin]}/puppet module list --color=false",    scope_directory, 'puppet_modules_list.txt')
