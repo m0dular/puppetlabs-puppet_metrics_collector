@@ -847,7 +847,13 @@ etc_checks() {
   mkdir "${DROP}/etc"
   ln -s ../system/etc/hosts "${DROP}/etc/hosts"
 
-  for f in "/etc/yum.conf" "/etc/yum.repos.d" "/etc/apt/apt.conf.d" "/etc/apt/sources.list.d"; do
+  for f in "/etc/dnf.conf" "/etc/yum.conf"; do
+    if [ -f $f ]; then
+      cp --parents $f "$DROP"/system
+    fi
+  done
+
+  for f in "/etc/yum.repos.d" "/etc/apt/apt.conf.d" "/etc/apt/sources.list.d"; do
     if [ -e $f ]; then
       cp --parents -Lr $f "$DROP"/system
     fi
