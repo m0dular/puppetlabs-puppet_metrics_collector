@@ -127,6 +127,27 @@ cmd() {
   hash "$1" &> /dev/null;
 }
 
+# Portable test for command option existence.
+#
+# Arguments:
+# 1. Command to test.
+# 2. Option to test.
+cmd_has_opt() {
+  if cmd_has_help "$1"; then
+    $1 --help | grep -q -- "$2" > /dev/null 2>&1
+  else
+    man "$1"  | grep -q -- "$2" > /dev/null 2>&1
+  fi
+}
+
+# Portable test for command help option existence.
+#
+# Arguments:
+# 1. Command to test.
+cmd_has_help() {
+  $1 --help > /dev/null 2>&1
+}
+
 # Running in noop mode? Return 0 if true.
 is_noop() {
   if [ y = "${IS_NOOP:-""}" ]; then
@@ -1139,8 +1160,17 @@ other_logs() {
       cp -pR /var/log/${log} "${DROP?}/logs" && gzip -9 "${DROP}/logs/${log}"
     fi
   done
+
   if [ -x /bin/dmesg ]; then
-    /bin/dmesg > "$DROP"/logs/dmesg.txt
+    if cmd_has_opt '/bin/dmesg' '--ctime'; then
+      if cmd_has_opt '/bin/dmesg' '--time-format'; then
+        /bin/dmesg --ctime --time-format iso > "$DROP"/logs/dmesg.txt
+      else
+        /bin/dmesg --ctime > "$DROP"/logs/dmesg.txt
+      fi
+    else
+      /bin/dmesg > "$DROP"/logs/dmesg.txt
+    fi
   fi
 }
 

@@ -899,7 +899,16 @@ module PuppetX
         copy_drop('/var/log/messages',     @drop_directory)
         copy_drop('/var/log/syslog',       @drop_directory)
         copy_drop('/var/log/system',       @drop_directory)
-        exec_drop('dmesg',                 scope_directory, 'dmesg.txt')
+
+        if documented_option?('dmesg', '--ctime')
+          if documented_option?('dmesg', '--time-format')
+            exec_drop('dmesg --ctime --time-format iso', scope_directory, 'dmesg.txt')
+          else
+            exec_drop('dmesg --ctime', scope_directory, 'dmesg.txt')
+          end
+        else
+          exec_drop('dmesg', scope_directory, 'dmesg.txt')
+        end
 
         copy_drop('/var/log/puppetlabs/installer', @drop_directory)
 
@@ -1782,6 +1791,28 @@ module PuppetX
 
       def executable?(command)
         Facter::Core::Execution.which(command)
+      end
+
+      # Test for command option existance.
+
+      def documented_option?(command, option)
+        if help_option?(command)
+          command_line = "#{command} --help | grep -q -- '#{option}' > /dev/null 2>&1"
+        else
+          command_line = "man #{command}    | grep -q -- '#{option}' > /dev/null 2>&1"
+        end
+        Facter::Core::Execution.execute(command_line)
+        $?.to_i.zero?
+      rescue Facter::Core::Execution::ExecutionFailure => e
+        false
+      end
+
+      def help_option?(command)
+        command_line = "#{command} --help > /dev/null 2>&1"
+        Facter::Core::Execution.execute(command_line)
+        $?.to_i.zero?
+      rescue Facter::Core::Execution::ExecutionFailure => e
+        false
       end
 
       # Test for noop mode.
