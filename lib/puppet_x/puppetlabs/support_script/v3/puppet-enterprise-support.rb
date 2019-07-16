@@ -466,7 +466,7 @@ module PuppetX
     # Collects diagnostic information about Puppet Enterprise for Support.
     class Support
       def initialize(options)
-        @version = '3.0.0.beta2'
+        @version = '3.0.0.beta3'
         @doc_url = 'https://puppet.com/docs/pe/2018.1/getting_support_for_pe.html#the-pe-support-script'
 
         @paths = {

@@ -1,3 +1,28 @@
+## [Release 2.12.0] - 2019-07-17
+
+### Summary
+
+Feature and bugfix release of the Support Script.
+
+### Features
+
+  - Configuration and log files for the PE 2019.1 `pe-ace-server` service
+    are collected from `/etc/puppetlabs/ace-server/conf.d` and from
+    `/var/log/puppetlabs/ace-server`.
+
+  - The size of the filebucket upload directory, `/opt/puppetlabs/server/data/puppetserver/bucket`
+    is collected.
+
+  - The `dnf.conf` file is collected on RedHat 8 systems.
+
+  - Human-readable date stamps are added to `dmesg` output when available.
+
+### Bug Fixes
+
+  - The Ruby version of the support script now properly collects `gem list`
+    output.
+
+
 ## [Release 2.11.0] - 2019-04-17
 
 ### Summary
@@ -534,6 +559,7 @@ installations, not agents.
     seconds.
 
 
+[Release 2.12.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/2.11.0...2.12.0
 [Release 2.11.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/2.10.0...2.11.0
 [Release 2.10.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/2.9.1...2.10.0
 [Release 2.9.1]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/2.9.0...2.9.1
