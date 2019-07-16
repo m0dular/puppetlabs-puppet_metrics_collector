@@ -646,7 +646,7 @@ module PuppetX
         files = [
           'apt/apt.conf.d',
           'apt/sources.list.d',
-          'dnf.conf',
+          'dnf/dnf.conf',
           'hosts',
           'nsswitch.conf',
           'os-release',

@@ -868,7 +868,7 @@ etc_checks() {
   mkdir "${DROP}/etc"
   ln -s ../system/etc/hosts "${DROP}/etc/hosts"
 
-  for f in "/etc/dnf.conf" "/etc/yum.conf"; do
+  for f in "/etc/dnf/dnf.conf" "/etc/yum.conf"; do
     if [ -f $f ]; then
       cp --parents $f "$DROP"/system
     fi
