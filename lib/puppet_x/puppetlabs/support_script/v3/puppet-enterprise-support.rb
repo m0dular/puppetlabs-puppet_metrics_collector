@@ -1,5 +1,6 @@
 #!/opt/puppetlabs/puppet/bin/ruby
 
+require 'fileutils'
 require 'json'
 require 'tempfile'
 require 'forwardable'
@@ -193,8 +194,8 @@ module SupportScript
       if File.symlink?(@settings[:dir])
         raise 'The dir option cannot be a symlink: %{dir}' %
               {dir: @settings[:dir]}
-      elsif (! File.directory?(@settings[:dir]))
-        raise 'The dir option is not an existing directory: %{dir}' %
+      elsif (! (File.directory?(@settings[:dir]) && File.writable?(@settings[:dir])))
+        raise 'The dir option is not set to a writable directory: %{dir}' %
               {dir: @settings[:dir]}
       end
 
@@ -1026,6 +1027,8 @@ module SupportScript
         return false
       end
 
+      setup_output_directory or return false
+
       true
     end
 
@@ -1054,9 +1057,56 @@ module SupportScript
                    backtrace: e.backtrace.join("\n\t")})
 
         return 1
+      ensure
+        cleanup_output_directory
       end
 
       return 0
+    end
+
+    private
+
+    def setup_output_directory
+      # Already set up.
+      return true if state.key?(:drop_directory)
+
+      parent_dir = File.realdirpath(settings[:dir])
+      timestamp = Time.now.strftime('%Y%m%d%H%M%S')
+      short_hostname = Facter.value('hostname').to_s.split('.').first
+      dirname = ['puppet_enterprise_support', settings[:ticket].to_s, short_hostname, timestamp].reject(&:empty?).join('_')
+
+      drop_directory = File.join(parent_dir, dirname)
+
+      log.info('creating output directory: %{drop_directory}' %
+               {drop_directory: drop_directory})
+
+      begin
+        FileUtils.mkdir_p(drop_directory, mode: 0700) unless noop?
+
+        # Store drop directory in state to make it available to other methods.
+        state[:drop_directory] = drop_directory
+      rescue => e
+        log.error("%{exception_class} raised when creating output directory: %{message}\n\t%{backtrace}" %
+                  {exception_class: e.class,
+                   message: e.message,
+                   backtrace: e.backtrace.join("\n\t")})
+
+        return false
+      end
+
+      return true
+    end
+
+    def cleanup_output_directory
+      if state.key?(:drop_directory) &&
+         File.directory?(state[:drop_directory]) &&
+         (! settings[:z_do_not_delete_drop_directory])
+        log.info('Cleaning up output directory: %{drop_directory}' %
+                 {drop_directory: state[:drop_directory]})
+
+        FileUtils.remove_entry_secure(state[:drop_directory], force: true)
+        state.delete(:drop_directory)
+      end
     end
   end
 end
@@ -1103,7 +1153,7 @@ module PuppetX
 
         query_platform
 
-        @drop_directory = create_drop_directory
+        @drop_directory = state[:drop_directory]
         @log_file = "#{@drop_directory}/log.txt"
 
         create_metadata_file
@@ -1980,26 +2030,6 @@ module PuppetX
       # Manage Output Directory and Output Archive
       #=========================================================================
 
-      # Create the drop directory, or exit.
-      # Instance Variables: @platform
-
-      def create_drop_directory
-        timestamp = Time.now.strftime('%Y%m%d%H%M%S')
-        drop_directory = ["#{settings[:dir]}/puppet_enterprise_support", settings[:ticket], @platform[:hostname], timestamp].reject(&:empty?).join('_')
-        if unsupported_drop_directory?(drop_directory)
-          fail_and_exit("Unsupported output directory: #{drop_directory}")
-        end
-        display "Creating output directory: #{drop_directory}"
-        display
-        exec_or_fail(%(rm -rf "#{drop_directory}"))
-        exec_or_fail(%(mkdir -p "#{drop_directory}"))
-        exec_or_fail(%(chmod 700 "#{drop_directory}"))
-        drop_directory
-      end
-
-      # Create the metadata file.
-      # Instance Variables: @drop_directory
-
       def create_metadata_file
         begin
           metadata = JSON.pretty_generate(settings)
@@ -2008,16 +2038,6 @@ module PuppetX
           logline 'error: pretty_json: unable to generate json'
         end
         data_drop(metadata, @drop_directory, 'metadata.json')
-      end
-
-      # Avoid interacting with the following system directories.
-
-      def unsupported_drop_directory?(directory)
-        return true if directory.nil?
-        return true if directory == ''
-        absolute_path = File.realdirpath(directory)
-        return true if ['/', '/boot', '/dev', '/proc', '/run', '/sys'].include?(absolute_path)
-        false
       end
 
       # Archive, compress, and optionally encrypt the drop directory or exit.
@@ -2038,7 +2058,7 @@ module PuppetX
         ensure
           File.umask(old_umask)
         end
-        delete_drop_directory
+
         if settings[:encrypt]
           gpg_command = executable?('gpg') ? 'gpg' : nil
           gpg_command = 'gpg2' if executable?('gpg2')
@@ -2055,19 +2075,6 @@ module PuppetX
           output_archive = "#{output_archive}.gpg"
         end
         output_archive
-      end
-
-      # Delete the drop directory or exit.
-      # Instance Variables: @drop_directory
-
-      def delete_drop_directory
-        return if settings[:z_do_not_delete_drop_directory]
-        if unsupported_drop_directory?(@drop_directory)
-          fail_and_exit("Unsupported output directory: #{@drop_directory}")
-        end
-        display "Deleting output directory: #{@drop_directory}"
-        display
-        exec_or_fail(%(rm -rf "#{@drop_directory}"))
       end
 
       # Optionally upload the archive file to Puppet Support.

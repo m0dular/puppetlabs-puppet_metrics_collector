@@ -1,3 +1,6 @@
+require 'fileutils'
+require 'tmpdir'
+
 require 'spec_helper'
 
 describe PuppetX::Puppetlabs::SupportScript::Settings do
@@ -38,7 +41,18 @@ describe PuppetX::Puppetlabs::SupportScript::Settings do
 
       expect { subject.validate }.to \
         raise_error(RuntimeError,
-                    /not an existing directory/)
+                    /not set to a writable directory/)
+    end
+
+    it 'validates that dir points to a writable directory' do
+      test_dir = Dir.mktmpdir('rspec')
+      FileUtils.chmod('-w', test_dir)
+
+      subject.configure(dir: test_dir)
+
+      expect { subject.validate }.to \
+        raise_error(RuntimeError,
+                    /not set to a writable directory/)
     end
 
     context 'when upload is enabled' do

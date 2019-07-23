@@ -17,13 +17,6 @@ describe PuppetX::Puppetlabs::Support do
   end
 
   context 'with its supporting methods' do
-    it 'will validate the output directory' do
-      script_settings.configure(dir: '/error')
-
-      expect(support_script.unsupported_drop_directory?('/')).to eq(true)
-      expect(support_script.unsupported_drop_directory?('/tmp')).to eq(false)
-    end
-
     it 'will validate the output_directory disk space' do
       expect { support_script.validate_output_directory_disk_space }.to_not raise_error
     end
