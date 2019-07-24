@@ -1670,7 +1670,11 @@ module PuppetX
 
         begin
           sftp_output = Facter::Core::Execution.execute(sftp_command)
-          unless $?.to_i.zero?
+          if $?.to_i.zero?
+            display "File uploaded to: #{@sftp_host}"
+            display
+            File.delete(@output_archive)
+          else
             ssh_key_file.unlink unless @options[:upload_key]
             ssh_known_hosts_file.unlink unless @options[:upload_disable_host_key_check]
             display ' ** Unable to upload the output archive file. SFTP Output:'
@@ -1678,6 +1682,8 @@ module PuppetX
             display sftp_output
             display
             display '    Please manualy upload the output archive file to Puppet Support.'
+            display
+            display "    Output archive file: #{@output_archive}"
             display
           end
         rescue Facter::Core::Execution::ExecutionFailure => e
@@ -1689,6 +1695,7 @@ module PuppetX
           display
           display '    Please manualy upload the output archive file to Puppet Support.'
           display
+          display "    Output archive file: #{@output_archive}"
           display
         end
       end
@@ -1697,10 +1704,7 @@ module PuppetX
       # Instance Variables: @options, @sftp_host, @doc_url, @output_archive
 
       def report_summary
-        if @options[:upload]
-          display "File uploaded to: #{@sftp_host}"
-          display
-        else
+        unless @options[:upload]
           display 'Puppet Enterprise customers ...'
           display
           display '  We recommend that you examine the collected data before forwarding to Puppet,'
@@ -1709,9 +1713,9 @@ module PuppetX
           display '  An overview of the data collected by this tool can be found at:'
           display "  #{@doc_url}"
           display
-          display '  Please upload the output archive file to Puppet Support.' unless @options[:upload]
+          display '  Please upload the output archive file to Puppet Support.'
           display
-          display "Output archive file: #{@output_archive}"
+          display "  Output archive file: #{@output_archive}"
           display
         end
         display 'Done!'
