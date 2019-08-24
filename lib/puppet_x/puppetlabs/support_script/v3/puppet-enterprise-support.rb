@@ -53,6 +53,27 @@ module SupportScript
       logger
     end
 
+    # Create a Logger instance sending messages to a file
+    #
+    # This method creates an instance of Ruby's standard Logger class that
+    # sends messages to a file. DEBUG level is used to capture maximum
+    # detail. Messages are formatted as JSON objects, one per line.
+    #
+    # @return [Logger]
+    def self.file_logger(path)
+      logger = ::Logger.new(path)
+      # TODO: Level should be configurable.
+      logger.level = ::Logger::DEBUG
+
+      logger.formatter = proc do |severity, datetime, progname, msg|
+                           {time: datetime.iso8601(3),
+                            level: severity,
+                            msg: msg}.to_json + "\n".freeze
+                         end
+
+      logger
+    end
+
     def initialize
       @loggers = []
     end
@@ -1028,6 +1049,7 @@ module SupportScript
       end
 
       setup_output_directory or return false
+      setup_logfile
 
       true
     end
@@ -1050,6 +1072,8 @@ module SupportScript
 
           child.run
         end
+
+        cleanup_logfile
       rescue => e
         log.error("%{exception_class} raised when executing diagnostics: %{message}\n\t%{backtrace}" %
                   {exception_class: e.class,
@@ -1108,6 +1132,32 @@ module SupportScript
         state.delete(:drop_directory)
       end
     end
+
+    # Create a logfile inside the drop directory
+    #
+    # A handle to the {::Logger}} created is stored in {Settings#state}
+    # under the `:log_file` key.
+    #
+    # @return [void]
+    def setup_logfile
+      return if noop? || ! ( state.key?(:drop_directory) &&
+                             File.directory?(state[:drop_directory]))
+
+      log_path = File.join(state[:drop_directory], 'support_script_log.jsonl')
+      log_file = File.open(log_path, 'w')
+      logger = LogManager.file_logger(log_file)
+
+      state[:log_file] = logger
+      log.add_logger(logger)
+    end
+
+    def cleanup_logfile
+      if state.key?(:log_file)
+        log.remove_logger(state[:log_file])
+        state[:log_file].close
+        state.delete(:log_file)
+      end
+    end
   end
 end
 end
@@ -1154,7 +1204,6 @@ module PuppetX
         query_platform
 
         @drop_directory = state[:drop_directory]
-        @log_file = "#{@drop_directory}/log.txt"
 
         create_metadata_file
 
@@ -1406,7 +1455,7 @@ module PuppetX
           puppetserver_environments = JSON.parse(puppetserver_environments_json)
         rescue JSON::ParserError
           puppetserver_environments = {}
-          logline 'error: collect_scope_enterprise: unable to parse puppetserver_environments_json'
+          log.error('collect_scope_enterprise: unable to parse puppetserver_environments_json')
         end
         puppetserver_environments['environments'].keys.each do |environment|
           environment_manifests = puppetserver_environments['environments'][environment]['settings']['manifest']
@@ -1705,7 +1754,8 @@ module PuppetX
       # https://github.com/RedHatGov/soscleaner
       def sos_clean(file, link)
         command = %(ln --relative --symbolic "#{file}" "#{link}")
-        logline "sos_clean: #{command}"
+        log.debug('sos_clean: %{command}' %
+                  {command: command})
         return if noop?
         exec_return_status(command)
       end
@@ -1789,7 +1839,8 @@ module PuppetX
             result << "\n#{acsiibar}\n"
           end
         else
-          logline "query_packages_matching: unable to list packages for platform: #{@platform[:name]}"
+          log.warn('query_packages_matching: unable to list packages for platform: %{platform}' %
+                   {platform: @platform[:name]})
           display_warning("Unable to list packages for platform: #{@platform[:name]}")
         end
         result
@@ -1807,7 +1858,8 @@ module PuppetX
         when 'dpkg'
           status = exec_return_status(%(dpkg-query  --show #{package}))
         else
-          logline "package_installed: unable to query package for platform: #{@platform[:name]}"
+          log.warn('package_installed: unable to query package for platform: %{platform}' %
+                   {platform: @platform[:name]})
           display_warning("Unable to query package for platform: #{@platform[:name]}")
         end
         @packages[package] = status
@@ -2035,7 +2087,7 @@ module PuppetX
           metadata = JSON.pretty_generate(settings)
         rescue JSON::GeneratorError
           metadata = '{}'
-          logline 'error: pretty_json: unable to generate json'
+          log.error('pretty_json: unable to generate json')
         end
         data_drop(metadata, @drop_directory, 'metadata.json')
       end
@@ -2174,16 +2226,6 @@ module PuppetX
         end
         display 'Done!'
         display
-      end
-
-      #=========================================================================
-      # Utilities
-      #=========================================================================
-
-      # Log to a log file.
-      # Instance Variables: @log_file
-      def logline(datum)
-        File.open(@log_file, 'a') { |file| file.puts(datum) }
       end
 
       #=========================================================================
