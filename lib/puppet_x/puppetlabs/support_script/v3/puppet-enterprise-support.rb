@@ -1,5 +1,6 @@
 #!/opt/puppetlabs/puppet/bin/ruby
 
+require 'date'
 require 'fileutils'
 require 'json'
 require 'tempfile'
@@ -1048,8 +1049,11 @@ module SupportScript
         return false
       end
 
+      state[:start_time] = DateTime.now
+
       setup_output_directory or return false
       setup_logfile
+      create_metadata_file
 
       true
     end
@@ -1095,7 +1099,7 @@ module SupportScript
       return true if state.key?(:drop_directory)
 
       parent_dir = File.realdirpath(settings[:dir])
-      timestamp = Time.now.strftime('%Y%m%d%H%M%S')
+      timestamp = state[:start_time].strftime('%Y%m%d%H%M%S')
       short_hostname = Facter.value('hostname').to_s.split('.').first
       dirname = ['puppet_enterprise_support', settings[:ticket].to_s, short_hostname, timestamp].reject(&:empty?).join('_')
 
@@ -1158,6 +1162,16 @@ module SupportScript
         state.delete(:log_file)
       end
     end
+
+    def create_metadata_file
+      return if noop? || ! ( state.key?(:drop_directory) &&
+                             File.directory?(state[:drop_directory]))
+      metadata = JSON.pretty_generate(version: PuppetX::Puppetlabs::SupportScript::VERSION,
+                                      ticket: settings[:ticket],
+                                      timestamp: state[:start_time].iso8601(3))
+      metadata_file = File.join(state[:drop_directory], 'metadata.json')
+      File.write(metadata_file, metadata)
+    end
   end
 end
 end
@@ -1204,8 +1218,6 @@ module PuppetX
         query_platform
 
         @drop_directory = state[:drop_directory]
-
-        create_metadata_file
 
         collect_scope_enterprise if settings[:scope]['enterprise']
         collect_scope_etc        if settings[:scope]['etc']
@@ -2082,16 +2094,6 @@ module PuppetX
       # Manage Output Directory and Output Archive
       #=========================================================================
 
-      def create_metadata_file
-        begin
-          metadata = JSON.pretty_generate(settings)
-        rescue JSON::GeneratorError
-          metadata = '{}'
-          log.error('pretty_json: unable to generate json')
-        end
-        data_drop(metadata, @drop_directory, 'metadata.json')
-      end
-
       # Archive, compress, and optionally encrypt the drop directory or exit.
       # Instance Variables: @drop_directory, @pgp_recipient
 
@@ -2376,7 +2378,7 @@ if File.expand_path(__FILE__) == File.expand_path($PROGRAM_NAME)
   default_log_age = 14
   default_scope   = %w[enterprise etc log networking resources system].join(',')
 
-  puts 'Puppet Enterprise Support Script'
+  puts 'Puppet Enterprise Support Script v' + PuppetX::Puppetlabs::SupportScript::VERSION
   puts
 
   options = {}
