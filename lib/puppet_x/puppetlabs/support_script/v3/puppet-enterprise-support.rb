@@ -912,6 +912,7 @@ EOS
   class Check
     include Configable
     include Confinable
+    include DiagnosticHelpers
 
     # Initialize a new check
     #
@@ -975,6 +976,7 @@ EOS
   class Scope
     include Configable
     include Confinable
+    include DiagnosticHelpers
 
     # Data for initializing children
     #
@@ -1042,7 +1044,7 @@ EOS
       @children.each do |child|
         next unless child.enabled? && child.suitable?
         start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC, :float_second)
-        log.info('starting evaluation of %{name}' %
+        log.info('starting evaluation of: %{name}' %
                  {name: child.name})
 
         begin
@@ -1076,30 +1078,89 @@ EOS
       enable_list = (settings[:only] + settings[:enable]).select {|e| e.start_with?(name)}
 
       @children = self.class.child_specs.map do |(klass, opts)|
-        child = klass.new(self, **opts)
+        begin
+          child = klass.new(self, **opts)
+        rescue => e
+          log.error("%{exception_class} raised when initializing %{klass} in scope '%{scope}': %{message}\n\t%{backtrace}" %
+                    {exception_class: e.class,
+                     klass: klass.name,
+                     scope: self.name,
+                     message: e.message,
+                     backtrace: e.backtrace.join("\n\t")})
+          next
+        end
+
         child.enabled = false if (not self.enabled?)
 
+        # Handle disabling things that do not appear in the `only` list
         if (not settings[:only].empty?) && child.enabled?
           # Disable children unless they are explicitly enabled, or one of
           # their parents is explicitly enabled.
           child.enabled = false unless enable_list.any? {|e| child.name.start_with?(e)}
         end
 
+        # Handle enabling things that appear in the `enabled` or `only` lists
         if (klass < Scope)
           # Enable Scopes if they are explicitly enabled, or one of their
           # children is explicitly enabled.
-          child.enabled = enable_list.any? {|e| e.start_with?(child.name)}
+          child.enabled = true if enable_list.any? {|e| e.start_with?(child.name)}
         elsif (klass < Check)
           # Enable Checks if they are explicitly enabled.
           child.enabled = true if enable_list.include?(child.name)
         end
 
-        # Disable anything explicitly listed.
+        # Handle the `disable` list
         child.enabled = false if settings[:disable].include?(child.name)
 
         child
       end
+
+      # Remove any children that failed to initialize
+      @children.compact!
     end
+  end
+
+  # Gather basic diagnostics
+  #
+  # This check produces:
+  #
+  #   - A metadata.json file that contains the version of the support
+  #     script that is running, the Puppet ticket number, if supplied,
+  #     and the time at which the script was run.
+  class Check::BaseStatus < Check
+    # The base check is always suitable
+    def suitable?
+      true
+    end
+
+    # The base check is always enabled
+    def enabled?
+      true
+    end
+
+    def run
+      metadata = JSON.pretty_generate(version: PuppetX::Puppetlabs::SupportScript::VERSION,
+                                      ticket: settings[:ticket],
+                                      timestamp: state[:start_time].iso8601(3))
+      metadata_file = File.join(state[:drop_directory], 'metadata.json')
+
+      data_drop(metadata, state[:drop_directory], 'metadata.json')
+    end
+  end
+
+  # Base scope which includes all other scopes
+  class Scope::Base < Scope
+    # The base scope is always suitable
+    def suitable?
+      true
+    end
+
+    # The base scope is always enabled
+    def enabled?
+      true
+    end
+
+    self.add_child(Check::BaseStatus, name: 'base-status')
   end
 
   # Runtime logic for executing diagnostics
@@ -1200,7 +1261,6 @@ EOS
 
       setup_output_directory or return false
       setup_logfile
-      create_metadata_file
 
       true
     end
@@ -1316,16 +1376,6 @@ EOS
         state[:log_file].close
         state.delete(:log_file)
       end
-    end
-
-    def create_metadata_file
-      return if noop? || ! ( state.key?(:drop_directory) &&
-                             File.directory?(state[:drop_directory]))
-      metadata = JSON.pretty_generate(version: PuppetX::Puppetlabs::SupportScript::VERSION,
-                                      ticket: settings[:ticket],
-                                      timestamp: state[:start_time].iso8601(3))
-      metadata_file = File.join(state[:drop_directory], 'metadata.json')
-      File.write(metadata_file, metadata)
     end
 
     # Create a tarball from a directory of support script output
@@ -2445,6 +2495,7 @@ if File.expand_path(__FILE__) == File.expand_path($PROGRAM_NAME)
   PuppetX::Puppetlabs::SupportScript::Settings.instance.configure(**options)
   PuppetX::Puppetlabs::SupportScript::Settings.instance.log.add_logger(PuppetX::Puppetlabs::SupportScript::LogManager.console_logger)
   support = PuppetX::Puppetlabs::SupportScript::Runner.new
+  support.add_child(PuppetX::Puppetlabs::SupportScript::Scope::Base, name: '')
   support.add_child(PuppetX::Puppetlabs::Support)
 
   exit support.run
