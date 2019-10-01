@@ -53,5 +53,38 @@ describe PuppetX::Puppetlabs::SupportScript::Runner do
 
       expect(subject.run).to eq(1)
     end
+
+    context 'when encryption is enabled' do
+      before(:each) { script_settings.configure(encrypt: true) }
+
+      it 'logs a failure and returns 1 if no gpg executable is found' do
+        allow(subject).to receive(:executable?).with('gpg2').and_return(nil)
+        allow(subject).to receive(:executable?).with('gpg').and_return(nil)
+
+        expect(script_logger).to receive(:error).with(/Could not find gpg or gpg2 on the PATH/)
+
+        expect(subject.run).to eq(1)
+      end
+
+      it 'produces an archive that ends in .gpg' do
+        allow(subject).to receive(:executable?).with('gpg2').and_return('/usr/bin/gpg2')
+        allow(subject).to receive(:display)
+        expect(subject).to receive(:display).with(/Output archive file:.*\.gpg$/)
+
+        expect(subject.run).to eq(0)
+      end
+    end
+
+    context 'when upload is enabled' do
+      before(:each) { script_settings.configure(upload: true, ticket: '1234') }
+
+      it 'logs a failure and returns 1 if no sftp executable is found' do
+        allow(subject).to receive(:executable?).with('sftp').and_return(nil)
+
+        expect(script_logger).to receive(:error).with(/Could not find sftp on the PATH/)
+
+        expect(subject.run).to eq(1)
+      end
+    end
   end
 end

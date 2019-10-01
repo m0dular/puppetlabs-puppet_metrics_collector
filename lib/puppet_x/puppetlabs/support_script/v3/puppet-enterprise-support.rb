@@ -22,6 +22,130 @@ module Puppetlabs
 # Enterprise installations.
 module SupportScript
   VERSION = '3.0.0.beta3'.freeze
+  DOC_URL = 'https://puppet.com/docs/pe/2018.1/getting_support_for_pe.html#the-pe-support-script'.freeze
+
+  PGP_RECIPIENT = 'FD172197'.freeze
+  PGP_KEY = (<<-'EOS').freeze
+-----BEGIN PGP PUBLIC KEY BLOCK-----
+Version: GnuPG v2.0.14 (GNU/Linux)
+
+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
+xfhzX6eZ+xft
+=j4/z
+-----END PGP PUBLIC KEY BLOCK-----
+EOS
+
+  SFTP_HOST = 'customer-support.puppetlabs.net'.freeze
+  SFTP_USER = 'puppet.enterprise.support'.freeze
+  SFTP_KEY = (<<-'EOS').freeze
+-----BEGIN RSA PRIVATE KEY-----
+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
+-----END RSA PRIVATE KEY-----
+EOS
+  SFTP_KNOWN_HOSTS = (<<-'EOS').freeze
+# Primary
+customer-support.puppetlabs.net ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCrLB9mWc9pxVjUin3LtIRj3vMmqgv8oUKa/JAfXkRVoKgF7EYmmsjCU55pg+ZFBUD87hJ9JNKVM8TGEQ89sjnPBN6lCdKn0sc4wfVHqbh70VvX7LhQPM79eUUkvdfHcRep1VsgWrxJlKZH42X+ermWrnzE+1vz2OB/edDOjG4Ku/gh7YHFTS1VyPzf+R0q5Nl0VQvo0RHXaeVVNMLlMy5BuRQCU1+WPKKHtH+ZvzfE6/rc/CR8L4PKzcHuQN5n1bcl13hlsYr+IHMkESJyZWIHeZiKUSa7hu464Nl0LNGhDLN25bAZrqiFwiyNEhz1+v1BOhhgkFJ0vWSoKPlsqS55
+customer-support.puppetlabs.net ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBOwBtY6ojejMa6tl9QSAWDi2pSpTYBKldD3r6kIOJDTd2b7x99WQPFhJgWdJ76ANIolvEWI5lAkvFwMJ5SMG5Ak=
+customer-support.puppetlabs.net ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIO8GiFNutya82Ya+xeI8LWEbA2EmwVQF5gtvjsJ6s+W0
+# Asia-Pacific
+customer-support-syd.puppetlabs.net ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCw9P+9D/QFSveyYQUEIkB0Ii9OPZpna32x05RKgMslFZWXyctXfhoFQvtE/df9TfcYA8dFZuibJZamQKwQ6VPjkbk7YdMpWbho5X9j78B7Dr74iQQKzZzLUYf4Nqrjpo+S6lHGLTA2Oxt8Hi6a7FqYqzVDR8umuetncLsPMSpjlU+veAcMIhPa5Lvw7m8dOoeiBfLs3TL+HgLMr/IUJ31QLUDIRDnB6nVBwoUU3OW+an9JksIeGyoB0kqT86nW22jFaZpzJ5YeRWvtmrlZkPjpjayPb91rKLd8ZLQGTR3Y55yArok9Q55+C74LsouNyFMKKdoa4dOh7ikhJ5wE1dU1
+customer-support-syd.puppetlabs.net ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBFUTiJ8+OWy3QIF2ajlOaiE7k10Ae1TP9eh4ClgNMKvrGXojaJ/qztQHGQbhsDLQT0BduJ24ow58bXebziz5JCs=
+customer-support-syd.puppetlabs.net ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ+v91GesXhPY9+hpOTqPIFlyFkMT8CrKDVNL7vFycP2
+EOS
 
   # Manages one or more Logger instances
   #
@@ -988,6 +1112,7 @@ module SupportScript
   #   - Generating output archives and disposing of any runtime state.
   class Runner
     include Configable
+    include DiagnosticHelpers
 
     def initialize(**options)
       initialize_configable
@@ -1049,6 +1174,28 @@ module SupportScript
         return false
       end
 
+      if settings[:encrypt]
+        gpg_command = executable?('gpg2') || executable?('gpg')
+
+        if gpg_command.nil?
+          log.error('Could not find gpg or gpg2 on the PATH. GPG must be installed to use the --encrypt option')
+          return false
+        else
+          state[:gpg_command] = gpg_command
+        end
+      end
+
+      if settings[:upload]
+        sftp_command = executable?('sftp')
+
+        if sftp_command.nil?
+          log.error('Could not find sftp on the PATH. SFTP must be installed to use the --upload option')
+          return false
+        else
+          state[:sftp_command] = sftp_command
+        end
+      end
+
       state[:start_time] = DateTime.now
 
       setup_output_directory or return false
@@ -1078,6 +1225,14 @@ module SupportScript
         end
 
         cleanup_logfile
+        output_file = create_output_archive(state[:drop_directory])
+        output_file = encrypt_output_archive(output_file) if settings[:encrypt]
+
+        if settings[:upload]
+          sftp_upload(output_file)
+        else
+          display_summary(output_file)
+        end
       rescue => e
         log.error("%{exception_class} raised when executing diagnostics: %{message}\n\t%{backtrace}" %
                   {exception_class: e.class,
@@ -1172,6 +1327,138 @@ module SupportScript
       metadata_file = File.join(state[:drop_directory], 'metadata.json')
       File.write(metadata_file, metadata)
     end
+
+    # Create a tarball from a directory of support script output
+    #
+    # @param output_directory [String] Path to the support script output
+    #   directory.
+    #
+    # @return [String] Path to the compressed archive.
+    def create_output_archive(output_directory)
+      tar_change_directory = File.dirname(output_directory)
+      tar_directory = File.basename(output_directory)
+      output_archive = File.join(settings[:dir], tar_directory + '.tar.gz')
+
+      log.info('Creating output archive: %{output_archive}' %
+               {output_archive: output_archive})
+
+      return output_archive if noop?
+
+      old_umask = File.umask
+      begin
+        File.umask(0077)
+        exec_or_fail(%(tar --create --file - --directory '#{tar_change_directory}' '#{tar_directory}' | gzip --force -9 > '#{output_archive}'))
+      ensure
+        File.umask(old_umask)
+      end
+
+      output_archive
+    end
+
+    def encrypt_output_archive(output_archive)
+      encrypted_archive = output_archive + '.gpg'
+      gpg_homedir = File.join(state[:drop_directory], 'gpg')
+
+      log.info('Encrypting output archive file: %{output_archive}' %
+               {output_archive: output_archive})
+
+      return encrypted_archive if noop?
+
+      FileUtils.mkdir(gpg_homedir, mode: 0700)
+      exec_or_fail(%(echo '#{PGP_KEY}' | '#{state[:gpg_command]}' --quiet --import --homedir '#{gpg_homedir}'))
+      exec_or_fail(%(#{state[:gpg_command]} --quiet --homedir "#{gpg_homedir}" --trust-model always --recipient #{PGP_RECIPIENT} --encrypt "#{output_archive}"))
+      FileUtils.safe_unlink(output_archive)
+
+      encrypted_archive
+    end
+
+    def sftp_upload(output_archive)
+      log.info('Uploading: %{output_archive} via SFTP' %
+               {output_archive: output_archive})
+
+      return if noop?
+
+      if settings[:upload_disable_host_key_check]
+        ssh_known_hosts = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+      else
+        ssh_known_hosts_file = Tempfile.new('csp.ky')
+        ssh_known_hosts_file.write(SFTP_KNOWN_HOSTS)
+        ssh_known_hosts_file.close
+        ssh_known_hosts = "-o StrictHostKeyChecking=yes -o UserKnownHostsFile=#{ssh_known_hosts_file.path}"
+      end
+      if settings[:upload_user]
+        sftp_url = "#{settings[:upload_user]}@#{SFTP_HOST}:/"
+      else
+        sftp_url = "#{SFTP_USER}@#{SFTP_HOST}:/drop/"
+      end
+      if settings[:upload_key]
+        ssh_key_file = File.absolute_path(settings[:upload_key])
+        ssh_identity = "IdentityFile=#{ssh_key_file}"
+      else
+        ssh_key_file = Tempfile.new('pes.ky')
+        ssh_key_file.write(SFTP_KEY)
+        ssh_key_file.close
+        ssh_identity = "IdentityFile=#{ssh_key_file.path}"
+      end
+      # https://stribika.github.io/2015/01/04/secure-secure-shell.html
+      # ssh_ciphers        = 'Ciphers=chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr'
+      # ssh_kex_algorithms = 'KexAlgorithms=curve25519-sha256@libssh.org,diffie-hellman-group-exchange-sha256'
+      # ssh_macs         = 'MACs=hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-512,hmac-sha2-256,umac-128@openssh.com'
+      ssh_ciphers        = 'Ciphers=aes256-ctr,aes192-ctr,aes128-ctr'
+      ssh_kex_algorithms = 'KexAlgorithms=diffie-hellman-group-exchange-sha256'
+      ssh_macs           = 'MACs=hmac-sha2-512,hmac-sha2-256'
+      ssh_options        = %(-o "#{ssh_ciphers}" -o "#{ssh_kex_algorithms}" -o "#{ssh_macs}" -o "Protocol=2" -o "ConnectTimeout=16"  #{ssh_known_hosts} -o "#{ssh_identity}" -o "BatchMode=yes")
+      sftp_command       = %(echo 'put #{output_archive}' | sftp #{ssh_options} #{sftp_url} 2>&1)
+
+      begin
+        sftp_output = Facter::Core::Execution.execute(sftp_command)
+        if $?.to_i.zero?
+          log.info('File uploaded to: %{sftp_host}' %
+                   {sftp_host: SFTP_HOST})
+          File.delete(output_archive)
+        else
+          ssh_key_file.unlink unless settings[:upload_key]
+          ssh_known_hosts_file.unlink unless settings[:upload_disable_host_key_check]
+          # FIXME: Make i18n friendly
+          display ' ** Unable to upload the output archive file. SFTP Output:'
+          display
+          display sftp_output
+          display
+          display '    Please manualy upload the output archive file to Puppet Support.'
+          display
+          display "    Output archive file: #{output_archive}"
+          display
+        end
+      rescue Facter::Core::Execution::ExecutionFailure => e
+        ssh_key_file.unlink unless settings[:upload_key]
+        ssh_known_hosts_file.unlink unless settings[:upload_disable_host_key_check]
+        # FIXME: Make i18n friendly
+        display ' ** Unable to upload the output archive file: SFTP command error:'
+        display
+        display e
+        display
+        display '    Please manualy upload the output archive file to Puppet Support.'
+        display
+        display "    Output archive file: #{output_archive}"
+        display
+      end
+    end
+
+    def display_summary(output_archive)
+      # FIXME: Make i18n friendly
+      display 'Puppet Enterprise customers ...'
+      display
+      display '  We recommend that you examine the collected data before forwarding to Puppet,'
+      display '  as it may contain sensitive information that you may wish to redact.'
+      display
+      display '  An overview of the data collected by this tool can be found at:'
+      display "  #{DOC_URL}"
+      display
+      display '  Please upload the output archive file to Puppet Support.'
+      display
+      display "  Output archive file: #{output_archive}"
+      display
+    end
   end
 end
 end
@@ -1186,7 +1473,6 @@ module PuppetX
       include SupportScript::DiagnosticHelpers
 
       def initialize(**options)
-        @doc_url = 'https://puppet.com/docs/pe/2018.1/getting_support_for_pe.html#the-pe-support-script'
 
         @paths = {
           puppetlabs_bin: '/opt/puppetlabs/bin',
@@ -1196,11 +1482,6 @@ module PuppetX
         }
 
         initialize_configable
-
-        @pgp_recipient = 'FD172197'
-
-        @sftp_host = 'customer-support.puppetlabs.net'
-        @sftp_user = 'puppet.enterprise.support'
 
         # Cache lookups about this host.
         @platform = {}
@@ -1225,12 +1506,6 @@ module PuppetX
         collect_scope_networking if settings[:scope]['networking']
         collect_scope_resources  if settings[:scope]['resources']
         collect_scope_system     if settings[:scope]['system']
-
-        @output_archive = create_drop_directory_archive
-
-        optionally_upload_to_puppet_support
-
-        report_summary
       end
 
       #=========================================================================
@@ -2088,280 +2363,6 @@ module PuppetX
           ORDER BY date_part('month', start_time) DESC, date_part('day', start_time) DESC, date_part( 'hour', start_time ) DESC, date_part('minute', start_time) DESC;"
         command = %(su pe-postgres --shell /bin/bash --command "#{@paths[:server_bin]}/psql --dbname pe-puppetdb --command \\"#{sql}\\"")
         exec_return_result(command)
-      end
-
-      #=========================================================================
-      # Manage Output Directory and Output Archive
-      #=========================================================================
-
-      # Archive, compress, and optionally encrypt the drop directory or exit.
-      # Instance Variables: @drop_directory, @pgp_recipient
-
-      def create_drop_directory_archive
-        display "Processing output directory: #{@drop_directory}"
-        display
-        display " ** Archiving output directory: #{@drop_directory}"
-        display
-        tar_change_directory = File.dirname(@drop_directory)
-        tar_directory = File.basename(@drop_directory)
-        output_archive = "#{@drop_directory}.tar.gz"
-        old_umask = File.umask
-        begin
-          File.umask(0077)
-          exec_or_fail(%(tar --create --file - --directory "#{tar_change_directory}" "#{tar_directory}" | gzip --force -9 > "#{output_archive}"))
-        ensure
-          File.umask(old_umask)
-        end
-
-        if settings[:encrypt]
-          gpg_command = executable?('gpg') ? 'gpg' : nil
-          gpg_command = 'gpg2' if executable?('gpg2')
-          unless gpg_command
-            fail_and_exit('Could not find gpg or gpg2 on the PATH. GPG must be installed to use the --encrypt option')
-          end
-          display " ** Encrypting output archive file: #{output_archive}"
-          display
-          exec_or_fail(%(mkdir "#{@drop_directory}/gpg"))
-          exec_or_fail(%(chmod 600 "#{@drop_directory}/gpg"))
-          exec_or_fail(%(echo "#{pgp_public_key}" | "#{gpg_command}" --quiet --import --homedir "#{@drop_directory}/gpg"))
-          exec_or_fail(%(#{gpg_command} --quiet --homedir "#{@drop_directory}/gpg" --trust-model always --recipient #{@pgp_recipient} --encrypt "#{output_archive}"))
-          exec_or_fail(%(rm -f "#{output_archive}"))
-          output_archive = "#{output_archive}.gpg"
-        end
-        output_archive
-      end
-
-      # Optionally upload the archive file to Puppet Support.
-      # Instance Variables: @sftp_host, @sftp_user, @output_archive
-
-      def optionally_upload_to_puppet_support
-        return unless settings[:upload]
-        display "Uploading: #{@output_archive} via SFTP"
-        display
-        unless executable?('sftp')
-          display ' ** Unable to upload archive file: sftp command unavailable'
-          display
-          return
-        end
-
-        if settings[:upload_disable_host_key_check]
-          ssh_known_hosts = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
-        else
-          ssh_known_hosts_file = Tempfile.new('csp.ky')
-          ssh_known_hosts_file.write(sftp_ssh_known_hosts)
-          ssh_known_hosts_file.close
-          ssh_known_hosts = "-o StrictHostKeyChecking=yes -o UserKnownHostsFile=#{ssh_known_hosts_file.path}"
-        end
-        if settings[:upload_user]
-          sftp_url = "#{settings[:upload_user]}@#{@sftp_host}:/"
-        else
-          sftp_url = "#{@sftp_user}@#{@sftp_host}:/drop/"
-        end
-        if settings[:upload_key]
-          ssh_key_file = File.absolute_path(settings[:upload_key])
-          ssh_identity = "IdentityFile=#{ssh_key_file}"
-        else
-          ssh_key_file = Tempfile.new('pes.ky')
-          ssh_key_file.write(default_sftp_key)
-          ssh_key_file.close
-          ssh_identity = "IdentityFile=#{ssh_key_file.path}"
-        end
-        # https://stribika.github.io/2015/01/04/secure-secure-shell.html
-        # ssh_ciphers        = 'Ciphers=chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr'
-        # ssh_kex_algorithms = 'KexAlgorithms=curve25519-sha256@libssh.org,diffie-hellman-group-exchange-sha256'
-        # ssh_macs         = 'MACs=hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-512,hmac-sha2-256,umac-128@openssh.com'
-        ssh_ciphers        = 'Ciphers=aes256-ctr,aes192-ctr,aes128-ctr'
-        ssh_kex_algorithms = 'KexAlgorithms=diffie-hellman-group-exchange-sha256'
-        ssh_macs           = 'MACs=hmac-sha2-512,hmac-sha2-256'
-        ssh_options        = %(-o "#{ssh_ciphers}" -o "#{ssh_kex_algorithms}" -o "#{ssh_macs}" -o "Protocol=2" -o "ConnectTimeout=16"  #{ssh_known_hosts} -o "#{ssh_identity}" -o "BatchMode=yes")
-        sftp_command       = %(echo 'put #{@output_archive}' | sftp #{ssh_options} #{sftp_url} 2>&1)
-
-        begin
-          sftp_output = Facter::Core::Execution.execute(sftp_command)
-          if $?.to_i.zero?
-            display "File uploaded to: #{@sftp_host}"
-            display
-            File.delete(@output_archive)
-          else
-            ssh_key_file.unlink unless settings[:upload_key]
-            ssh_known_hosts_file.unlink unless settings[:upload_disable_host_key_check]
-            display ' ** Unable to upload the output archive file. SFTP Output:'
-            display
-            display sftp_output
-            display
-            display '    Please manualy upload the output archive file to Puppet Support.'
-            display
-            display "    Output archive file: #{@output_archive}"
-            display
-          end
-        rescue Facter::Core::Execution::ExecutionFailure => e
-          ssh_key_file.unlink unless settings[:upload_key]
-          ssh_known_hosts_file.unlink unless settings[:upload_disable_host_key_check]
-          display ' ** Unable to upload the output archive file: SFTP command error:'
-          display
-          display e
-          display
-          display '    Please manualy upload the output archive file to Puppet Support.'
-          display
-          display "    Output archive file: #{@output_archive}"
-          display
-        end
-      end
-
-      # Summary.
-      # Instance Variables: @sftp_host, @doc_url, @output_archive
-
-      def report_summary
-        unless settings[:upload]
-          display 'Puppet Enterprise customers ...'
-          display
-          display '  We recommend that you examine the collected data before forwarding to Puppet,'
-          display '  as it may contain sensitive information that you may wish to redact.'
-          display
-          display '  An overview of the data collected by this tool can be found at:'
-          display "  #{@doc_url}"
-          display
-          display '  Please upload the output archive file to Puppet Support.'
-          display
-          display "  Output archive file: #{@output_archive}"
-          display
-        end
-        display 'Done!'
-        display
-      end
-
-      #=========================================================================
-      # Data
-      #=========================================================================
-
-      def pgp_public_key
-        result = <<-'PGPPUBLICKEY'
------BEGIN PGP PUBLIC KEY BLOCK-----
-Version: GnuPG v2.0.14 (GNU/Linux)
-
-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
-xfhzX6eZ+xft
-=j4/z
------END PGP PUBLIC KEY BLOCK-----
-PGPPUBLICKEY
-        result
-      end
-
-      def default_sftp_key
-        result = <<-'SSHKEY'
------BEGIN RSA PRIVATE KEY-----
-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
------END RSA PRIVATE KEY-----
-SSHKEY
-        result
-      end
-
-      def sftp_ssh_known_hosts
-        result = <<-'SSHKNOWNHOSTS'
-# Primary
-customer-support.puppetlabs.net ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCrLB9mWc9pxVjUin3LtIRj3vMmqgv8oUKa/JAfXkRVoKgF7EYmmsjCU55pg+ZFBUD87hJ9JNKVM8TGEQ89sjnPBN6lCdKn0sc4wfVHqbh70VvX7LhQPM79eUUkvdfHcRep1VsgWrxJlKZH42X+ermWrnzE+1vz2OB/edDOjG4Ku/gh7YHFTS1VyPzf+R0q5Nl0VQvo0RHXaeVVNMLlMy5BuRQCU1+WPKKHtH+ZvzfE6/rc/CR8L4PKzcHuQN5n1bcl13hlsYr+IHMkESJyZWIHeZiKUSa7hu464Nl0LNGhDLN25bAZrqiFwiyNEhz1+v1BOhhgkFJ0vWSoKPlsqS55
-customer-support.puppetlabs.net ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBOwBtY6ojejMa6tl9QSAWDi2pSpTYBKldD3r6kIOJDTd2b7x99WQPFhJgWdJ76ANIolvEWI5lAkvFwMJ5SMG5Ak=
-customer-support.puppetlabs.net ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIO8GiFNutya82Ya+xeI8LWEbA2EmwVQF5gtvjsJ6s+W0
-# Asia-Pacific
-customer-support-syd.puppetlabs.net ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCw9P+9D/QFSveyYQUEIkB0Ii9OPZpna32x05RKgMslFZWXyctXfhoFQvtE/df9TfcYA8dFZuibJZamQKwQ6VPjkbk7YdMpWbho5X9j78B7Dr74iQQKzZzLUYf4Nqrjpo+S6lHGLTA2Oxt8Hi6a7FqYqzVDR8umuetncLsPMSpjlU+veAcMIhPa5Lvw7m8dOoeiBfLs3TL+HgLMr/IUJ31QLUDIRDnB6nVBwoUU3OW+an9JksIeGyoB0kqT86nW22jFaZpzJ5YeRWvtmrlZkPjpjayPb91rKLd8ZLQGTR3Y55yArok9Q55+C74LsouNyFMKKdoa4dOh7ikhJ5wE1dU1
-customer-support-syd.puppetlabs.net ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBFUTiJ8+OWy3QIF2ajlOaiE7k10Ae1TP9eh4ClgNMKvrGXojaJ/qztQHGQbhsDLQT0BduJ24ow58bXebziz5JCs=
-customer-support-syd.puppetlabs.net ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ+v91GesXhPY9+hpOTqPIFlyFkMT8CrKDVNL7vFycP2
-SSHKNOWNHOSTS
-        result
       end
     end
   end
