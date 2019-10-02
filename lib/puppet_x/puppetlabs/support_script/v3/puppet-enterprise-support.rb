@@ -1163,6 +1163,167 @@ EOS
     self.add_child(Check::BaseStatus, name: 'base-status')
   end
 
+  # Gather operating system configuration
+  #
+  # This check gathers:
+  #
+  #   - A copy of /etc/hosts
+  #   - A copy of /etc/nsswitch.conf
+  #   - A copy of /etc/resolv.conf
+  #   - Configuration for the apt, yum, and dnf package managers
+  #   - The operating system version
+  #   - The umask in effect
+  #   - The status of SELinux
+  #   - A list of configured network interfaces
+  #   - A list of configured firewall rules
+  #   - A list of loaded firewall kernel modules
+  class Check::SystemConfig < Check
+    CONF_FILES = ['apt/apt.conf.d',
+                  'apt/sources.list.d',
+                  'dnf/dnf.conf',
+                  'hosts',
+                  'nsswitch.conf',
+                  'os-release',
+                  'resolv.conf',
+                  'yum.conf',
+                  'yum.repos.d'].map { |f| File.join('/etc', f) }
+
+    def run
+      output_directory = File.join(state[:drop_directory], 'system')
+      FileUtils.mkdir_p(output_directory) unless noop?
+
+      exec_drop('lsb_release -a',       output_directory, 'lsb_release.txt')
+      exec_drop('sestatus',             output_directory, 'selinux.txt')
+      exec_drop('umask',                output_directory, 'umask.txt')
+      exec_drop('uname -a',             output_directory, 'uname.txt')
+
+      CONF_FILES.each do |file|
+        copy_drop(file, output_directory)
+      end
+
+      output_directory = File.join(state[:drop_directory], 'networking')
+      FileUtils.mkdir_p(output_directory) unless noop?
+
+      data_drop(Facter.value('fqdn'), output_directory, 'hostname_output.txt')
+      exec_drop('ifconfig -a',        output_directory, 'ifconfig.txt')
+      exec_drop('iptables -L',        output_directory, 'ip_tables.txt')
+      exec_drop('ip6tables -L',       output_directory, 'ip_tables.txt')
+
+      unless executable?('iptables')
+        exec_drop('lsmod | grep ip', output_directory, 'ip_modules.txt')
+      end
+
+      unless noop?
+        # Create symlinks for compatibility with SOScleaner
+        #   https://github.com/RedHatGov/soscleaner
+        FileUtils.mkdir(File.join(state[:drop_directory], 'etc'))
+        FileUtils.ln_s('networking/hostname_output.txt',
+                       File.join(state[:drop_directory], 'hostname'))
+        FileUtils.ln_s('../system/etc/hosts',
+                       File.join(state[:drop_directory], 'etc/hosts'))
+      end
+    end
+  end
+
+  # Gather operating system logs
+  #
+  # This check gathers:
+  #
+  #   - A copy of the system log
+  #   - A copy of the kernel log
+  class Check::SystemLogs < Check
+    def run
+      output_directory = File.join(state[:drop_directory], 'logs')
+      FileUtils.mkdir_p(output_directory) unless noop?
+
+      # FIXME: These should be gzipped as they can be quite large.
+      copy_drop('/var/log/messages', output_directory, false)
+      copy_drop('/var/log/syslog', output_directory, false)
+      copy_drop('/var/log/system', output_directory, false)
+
+      if documented_option?('dmesg', '--ctime')
+        if documented_option?('dmesg', '--time-format')
+          exec_drop('dmesg --ctime --time-format iso', output_directory, 'dmesg.txt')
+        else
+          exec_drop('dmesg --ctime', output_directory, 'dmesg.txt')
+        end
+      else
+        exec_drop('dmesg', output_directory, 'dmesg.txt')
+      end
+    end
+  end
+
+  # Gather operating system diagnostics
+  #
+  # This check gathers:
+  #
+  #   - A list of variables set in the environment
+  #   - A list of running processes
+  #   - A list of enabled services
+  #   - The uptime of the system
+  #   - A list of established network connections
+  #   - NTP status
+  #   - The IP address and hostname of the node according to DNS
+  #   - Disk usage
+  #   - RAM usage
+  class Check::SystemStatus < Check
+    def run
+      output_directory = File.join(state[:drop_directory], 'system')
+      FileUtils.mkdir_p(output_directory) unless noop?
+
+      exec_drop('env',                  output_directory, 'env.txt')
+      exec_drop('ps -aux',              output_directory, 'ps_aux.txt')
+      exec_drop('ps -ef',               output_directory, 'ps_tree.txt')
+      exec_drop('chkconfig --list',     output_directory, 'services.txt')
+      exec_drop('svcs -a',              output_directory, 'services.txt')
+      exec_drop('systemctl list-units', output_directory, 'services.txt')
+      exec_drop('uptime',               output_directory, 'uptime.txt')
+
+      output_directory = File.join(state[:drop_directory], 'networking')
+      FileUtils.mkdir_p(output_directory) unless noop?
+
+      exec_drop('netstat -anptu',     output_directory, 'ports.txt')
+      exec_drop('ntpq -p',            output_directory, 'ntpq_output.txt')
+
+      unless noop?
+        command = %[ping -t1 -c1 '#{Facter.value('fqdn')}'|head -n1|tr -ds '()' ' '|cut -d ' ' -f3]
+        ip_address = exec_return_result(command)
+
+        unless ip_address.empty?
+          data_drop(ip_address, output_directory, 'guessed_ip_address.txt')
+          exec_drop("getent hosts '#{ip_address}'", output_directory, 'mapped_hostname_from_guessed_ip_address.txt')
+        end
+      end
+
+      output_directory = File.join(state[:drop_directory], 'resources')
+      FileUtils.mkdir_p(output_directory) unless noop?
+
+      exec_drop('df -h',   output_directory, 'df_output.txt')
+      exec_drop('df -i',   output_directory, 'df_output.txt')
+      exec_drop('df -k',   output_directory, 'df_inodes_output.txt')
+      exec_drop('free -h', output_directory, 'free_mem.txt')
+    end
+  end
+
+  # Scope which collects diagnostics from the operating system
+  #
+  # @todo Should confine to *NIX and have a seperate scope for Windows.
+  class Scope::System < Scope
+    Scope::Base.add_child(self, name: 'system')
+
+    self.add_child(Check::SystemConfig, name: 'config')
+    self.add_child(Check::SystemLogs, name: 'logs')
+    self.add_child(Check::SystemStatus, name: 'status')
+
+    def setup(**options)
+      # TODO: Many diagnostics contained here are also applicable to Solaris
+      #       AIX, and macOS, but should be reviewed and possibly split out
+      #       to a separate set of checks or scope. Windows needs its own
+      #       things.
+      confine(kernel: 'linux')
+    end
+  end
+
   # Runtime logic for executing diagnostics
   #
   # This class implements the runtime logic of the support script which
@@ -1670,23 +1831,6 @@ module PuppetX
         files.map { |file| "/etc/puppetlabs/#{file}" }
       end
 
-      # System Config Files
-
-      def system_config_list
-        files = [
-          'apt/apt.conf.d',
-          'apt/sources.list.d',
-          'dnf/dnf.conf',
-          'hosts',
-          'nsswitch.conf',
-          'os-release',
-          'resolv.conf',
-          'yum.conf',
-          'yum.repos.d'
-        ]
-        files.map { |file| "/etc/#{file}" }
-      end
-
       # Puppet Enterprise PostgreSQL Config Files
       # Instance Variables: @paths
 
@@ -1887,10 +2031,6 @@ module PuppetX
 
         scope_directory = "#{@drop_directory}/etc"
 
-        system_config_list.each do |source|
-          copy_drop(source, @drop_directory)
-        end
-
         puppet_enterprise_config_list.each do |source|
           copy_drop(source, @drop_directory)
         end
@@ -1914,8 +2054,6 @@ module PuppetX
             exec_return_status(command)
           end
         end
-
-        sos_clean("#{@drop_directory}/etc/hosts", "#{@drop_directory}/hosts")
       end
 
       # Collect puppet and system logs.
@@ -1926,20 +2064,6 @@ module PuppetX
         display
 
         scope_directory = "#{@drop_directory}/var/log"
-
-        copy_drop('/var/log/messages',     @drop_directory)
-        copy_drop('/var/log/syslog',       @drop_directory)
-        copy_drop('/var/log/system',       @drop_directory)
-
-        if documented_option?('dmesg', '--ctime')
-          if documented_option?('dmesg', '--time-format')
-            exec_drop('dmesg --ctime --time-format iso', scope_directory, 'dmesg.txt')
-          else
-            exec_drop('dmesg --ctime', scope_directory, 'dmesg.txt')
-          end
-        else
-          exec_drop('dmesg', scope_directory, 'dmesg.txt')
-        end
 
         copy_drop('/var/log/puppetlabs/installer', @drop_directory)
 
@@ -1967,32 +2091,11 @@ module PuppetX
 
         scope_directory = "#{@drop_directory}/networking"
 
-        data_drop(@platform[:hostname], scope_directory, 'hostname.txt')
-        exec_drop('ifconfig -a',        scope_directory, 'ifconfig.txt')
-        exec_drop('iptables -L',        scope_directory, 'iptables.txt')
-        exec_drop('ip6tables -L',       scope_directory, 'iptables.txt')
-        exec_drop('netstat -anptu',     scope_directory, 'ports.txt')
-        exec_drop('ntpq -p',            scope_directory, 'ntpq.txt')
-
-        unless executable?('iptables')
-          exec_drop('lsmod | grep ip', scope_directory, 'ip_modules.txt')
-        end
-
         # Puppet Networking:
 
         unless noop?
-          command = %(ping -t1 -c1 #{@platform[:hostname]})
-          ip_address = exec_return_result(command).split(' ')[2].tr('()', '')
-          data_drop(ip_address, scope_directory, 'ip_address.txt')
-          if ip_address
-            command = %(getent hosts #{ip_address})
-            mapped_hostname = exec_return_result(command)
-            data_drop(mapped_hostname, scope_directory, 'ip_address_hostnames.txt')
-          end
           exec_drop("ping -c 1 #{conf_puppet_agent_server}", scope_directory, 'puppet_ping.txt')
         end
-
-        sos_clean("#{scope_directory}/hostname.txt", "#{@drop_directory}/hostname")
       end
 
       # Collect system resource usage diagnostics.
@@ -2003,11 +2106,6 @@ module PuppetX
         display
 
         scope_directory = "#{@drop_directory}/resources"
-
-        exec_drop('df -h',   scope_directory, 'df_h_output.txt')
-        exec_drop('df -i',   scope_directory, 'df_i_output.txt')
-        exec_drop('df -k',   scope_directory, 'df_k_output.txt')
-        exec_drop('free -h', scope_directory, 'free_h.txt')
 
         # Puppet Resources:
 
@@ -2033,18 +2131,6 @@ module PuppetX
         display
 
         scope_directory = "#{@drop_directory}/system"
-
-        exec_drop('env',                  scope_directory, 'env.txt')
-        exec_drop('lsb_release -a',       scope_directory, 'lsb_release.txt')
-        exec_drop('ps -aux',              scope_directory, 'ps_aux.txt')
-        exec_drop('ps -ef',               scope_directory, 'ps_ef.txt')
-        exec_drop('sestatus',             scope_directory, 'selinux.txt')
-        exec_drop('chkconfig --list',     scope_directory, 'services.txt')
-        exec_drop('svcs -a',              scope_directory, 'services.txt')
-        exec_drop('systemctl list-units', scope_directory, 'services.txt')
-        exec_drop('umask',                scope_directory, 'umask.txt')
-        exec_drop('uname -a',             scope_directory, 'uname.txt')
-        exec_drop('uptime',               scope_directory, 'uptime.txt')
 
         puppet_enterprise_services_list.each do |service|
           ['memory','cpu','blkio','devices','pids','systemd'].each do |fs|
@@ -2081,20 +2167,6 @@ module PuppetX
           exec_drop("systemctl status #{service}", scope_directory, 'systemctl-status.txt')
           data_drop("=" * 100 + "\n", scope_directory, 'systemctl-status.txt')
         end
-      end
-
-      #=========================================================================
-      # Output
-      #=========================================================================
-
-      # Create a symlink to allow SOScleaner to redact hostnames in the output.
-      # https://github.com/RedHatGov/soscleaner
-      def sos_clean(file, link)
-        command = %(ln --relative --symbolic "#{file}" "#{link}")
-        log.debug('sos_clean: %{command}' %
-                  {command: command})
-        return if noop?
-        exec_return_status(command)
       end
 
       #=========================================================================
