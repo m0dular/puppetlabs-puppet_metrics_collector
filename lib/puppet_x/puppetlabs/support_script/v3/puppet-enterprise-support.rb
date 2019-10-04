@@ -1452,6 +1452,33 @@ EOS
     end
   end
 
+  # A check for gathering log files and journalctl data
+  class Check::ServiceLogs < Check::GatherFiles
+    def setup(**options)
+      super
+
+      @services = options[:services]
+      if @services.nil? || (! @services.is_a?(Array))
+        raise ArgumentError, 'Check::ServiceLogs must be initialized with a list of strings for the services: parameter.'
+      end
+    end
+
+    def run
+      super
+
+      if (! noop?) && executable?('journalctl')
+        age_filter = (settings[:log_age].is_a?(Integer) && (settings[:log_age] > 0)) ? " --since '#{settings[:log_age]} days ago'" : ''
+
+        @services.each do |service|
+          log_directory = File.join(state[:drop_directory], 'logs', service.sub('pe-', ''))
+          create_path(log_directory)
+
+          exec_drop("journalctl --full --output=short-iso --unit='#{service}.service' #{age_filter}", log_directory, "#{service}-journalctl.log")
+        end
+      end
+    end
+  end
+
   # Scope which collects diagnostics related to the Puppet service
   #
   # This scope gathers:
@@ -1473,12 +1500,13 @@ EOS
                                    'pxp-agent/pxp-agent.conf'],
                             to: 'enterprise/etc/puppetlabs',
                             max_age: -1}])
-    self.add_child(Check::GatherFiles,
+    self.add_child(Check::ServiceLogs,
                    name: 'logs',
                    files: [{from: '/var/log/puppetlabs',
                             copy: ['puppet/',
                                    'pxp-agent/'],
-                            to: 'logs'}])
+                            to: 'logs'}],
+                   services: ['puppet', 'pxp-agent'])
   end
 
   # Scope which collects diagnostics related to the PuppetServer service
@@ -1513,12 +1541,13 @@ EOS
                                    'r10k/r10k.yaml'],
                             to: 'enterprise/etc/puppetlabs',
                             max_age: -1}])
-    self.add_child(Check::GatherFiles,
+    self.add_child(Check::ServiceLogs,
                    name: 'logs',
                    files: [{from: '/var/log/puppetlabs',
                             copy: ['puppetserver/',
                                    'r10k/'],
-                            to: 'logs'}])
+                            to: 'logs'}],
+                   services: ['pe-puppetserver'])
     self.add_child(Check::GatherFiles,
                    name: 'metrics',
                    files: [{from: '/opt/puppetlabs/puppet-metrics-collector',
@@ -1547,11 +1576,12 @@ EOS
                                    'puppetdb/request-logging.xml'],
                             to: 'enterprise/etc/puppetlabs',
                             max_age: -1}])
-    self.add_child(Check::GatherFiles,
+    self.add_child(Check::ServiceLogs,
                    name: 'logs',
                    files: [{from: '/var/log/puppetlabs',
                             copy: ['puppetdb/'],
-                            to: 'logs'}])
+                            to: 'logs'}],
+                   services: ['pe-puppetdb'])
     self.add_child(Check::GatherFiles,
                    name: 'metrics',
                    files: [{from: '/opt/puppetlabs/puppet-metrics-collector',
@@ -1614,12 +1644,13 @@ EOS
                                    'nginx/nginx.conf'],
                             to: 'enterprise/etc/puppetlabs',
                             max_age: -1}])
-    self.add_child(Check::GatherFiles,
+    self.add_child(Check::ServiceLogs,
                    name: 'logs',
                    files: [{from: '/var/log/puppetlabs',
                             copy: ['console-services/',
                                    'nginx/'],
-                            to: 'logs'}])
+                            to: 'logs'}],
+                   services: ['pe-console-services', 'pe-nginx'])
 
   end
 
@@ -1657,7 +1688,7 @@ EOS
                                    'orchestration-services/request-logging.xml'],
                             to: 'enterprise/etc/puppetlabs',
                             max_age: -1}])
-    self.add_child(Check::GatherFiles,
+    self.add_child(Check::ServiceLogs,
                    name: 'logs',
                    files: [{from: '/var/log/puppetlabs',
                             copy: ['ace-server/',
@@ -1668,7 +1699,8 @@ EOS
                            {from: '/var/log/puppetlabs',
                             copy: ['orchestration-services/aggregate-node-count*.log*'],
                             to: 'logs',
-                            max_age: -1}])
+                            max_age: -1}],
+                  services: ['pe-ace-server', 'pe-bolt-server', 'pe-orchestration-services'])
     self.add_child(Check::GatherFiles,
                    name: 'metrics',
                    files: [{from: '/opt/puppetlabs/puppet-metrics-collector',
@@ -1694,7 +1726,7 @@ EOS
                             copy: ['*/data/{postgresql.conf,postmaster.opts,pg_ident.conf,pg_hba.conf}'],
                             to: 'enterprise/etc/puppetlabs/postgres',
                             max_age: -1}])
-    self.add_child(Check::GatherFiles,
+    self.add_child(Check::ServiceLogs,
                    name: 'logs',
                    files: [{from: '/var/log/puppetlabs',
                             copy: ['postgresql/*/'],
@@ -1703,7 +1735,8 @@ EOS
                             copy: ['pg_upgrade_internal.log',
                                    'pg_upgrade_server.log',
                                    'pg_upgrade_utility.log'],
-                            to: 'logs/postgresql'}])
+                            to: 'logs/postgresql'}],
+                  services: ['pe-postgresql'])
   end
 
   # Runtime logic for executing diagnostics
@@ -2342,10 +2375,6 @@ module PuppetX
         scope_directory = "#{@drop_directory}/var/log"
 
         recreate_parent_path = true
-
-        puppet_enterprise_services_list.each do |service|
-          exec_drop("journalctl --full --output=short-iso --unit=#{service} --since '#{settings[:log_age]} days ago'", scope_directory, "#{service}-journalctl.log")
-        end
 
         exec_drop('cat /var/lib/peadmin/.mcollective.d/client.log', scope_directory, 'peadmin_mcollective_client.log')
       end
