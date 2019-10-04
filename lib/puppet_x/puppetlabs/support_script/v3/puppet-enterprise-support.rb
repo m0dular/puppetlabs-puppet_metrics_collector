@@ -1479,6 +1479,21 @@ EOS
     end
   end
 
+  # A check for gathering configuration files with redaction
+  class Check::ConfigFiles < Check::GatherFiles
+    def run
+      super
+
+      unless noop?
+        @files.each do |batch|
+          batch[:copy].each do |file|
+            exec_return_result("true && cd '#{batch[:to]}' && find '#{file}' -type f -exec sed --in-place '/password/d' {} +")
+          end
+        end
+      end
+    end
+  end
+
   # Scope which collects diagnostics related to the Puppet service
   #
   # This scope gathers:
@@ -1489,7 +1504,7 @@ EOS
   class Scope::Puppet < Scope
     Scope::Base.add_child(self, name: 'puppet')
 
-    self.add_child(Check::GatherFiles,
+    self.add_child(Check::ConfigFiles,
                    name: 'config',
                    files: [{from: '/etc/puppetlabs',
                             copy: ['facter/facter.conf',
@@ -1521,7 +1536,7 @@ EOS
   class Scope::PuppetServer < Scope
     Scope::Base.add_child(self, name: 'puppetserver')
 
-    self.add_child(Check::GatherFiles,
+    self.add_child(Check::ConfigFiles,
                    name: 'config',
                    files: [{from: '/etc/puppetlabs',
                             copy: ['code/hiera.yaml',
@@ -1566,7 +1581,7 @@ EOS
   class Scope::PuppetDB < Scope
     Scope::Base.add_child(self, name: 'puppetdb')
 
-    self.add_child(Check::GatherFiles,
+    self.add_child(Check::ConfigFiles,
                    name: 'config',
                    files: [{from: '/etc/puppetlabs',
                             copy: ['puppetdb/bootstrap.cfg',
@@ -1600,7 +1615,7 @@ EOS
   class Scope::Pe < Scope
     Scope::Base.add_child(self, name: 'pe')
 
-    self.add_child(Check::GatherFiles,
+    self.add_child(Check::ConfigFiles,
                    name: 'config',
                    files: [{from: '/etc/puppetlabs',
                             copy: ['client-tools/orchestrator.conf',
@@ -1632,7 +1647,7 @@ EOS
   class Scope::Pe::Console < Scope
     Scope::Pe.add_child(self, name: 'console')
 
-    self.add_child(Check::GatherFiles,
+    self.add_child(Check::ConfigFiles,
                    name: 'config',
                    files: [{from: '/etc/puppetlabs',
                             copy: ['console-services/bootstrap.cfg',
@@ -1667,7 +1682,7 @@ EOS
   class Scope::Pe::Orchestration < Scope
     Scope::Pe.add_child(self, name: 'orchestration')
 
-    self.add_child(Check::GatherFiles,
+    self.add_child(Check::ConfigFiles,
                    name: 'config',
                    files: [{from: '/etc/puppetlabs',
                             copy: ['ace-server/conf.d/',
@@ -1720,7 +1735,7 @@ EOS
   class Scope::Pe::Postgres < Scope
     Scope::Pe.add_child(self, name: 'postgres')
 
-    self.add_child(Check::GatherFiles,
+    self.add_child(Check::ConfigFiles,
                    name: 'config',
                    files: [{from: '/opt/puppetlabs/server/data/postgresql',
                             copy: ['*/data/{postgresql.conf,postmaster.opts,pg_ident.conf,pg_hba.conf}'],
@@ -2355,14 +2370,6 @@ module PuppetX
         end
 
         exec_drop('cat /var/lib/peadmin/.mcollective', "#{scope_directory}/mcollective", 'peadmin_mcollective_client.cfg')
-
-        # Redact passwords from config files.
-        unless noop?
-          puppet_enterprise_config_list_to_redact.each do |file|
-            command = %(ls -1 #{@drop_directory}/#{file} 2>/dev/null | xargs --no-run-if-empty sed --in-place '/password/d')
-            exec_return_status(command)
-          end
-        end
       end
 
       # Collect puppet and system logs.
