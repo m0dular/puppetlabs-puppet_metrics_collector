@@ -887,43 +887,6 @@ EOS
       exec_return_status(command_line)
     end
 
-    # Copy files with names matching a glob to a destination directory
-    #
-    # @param src [String] Source directory for output.
-    # @param dst [String] Destination directory for output.
-    # @param glob [String] Glob expression used to filter list of copied files.
-    # @param recreate_parent_path [Boolean] Whether to re-create parent
-    #   directories of files in `src` underneath `dst`. Defaults to `true`.
-    # @param cwd [String, nil] Change to the directory given by `cwd` before
-    #   copying srcs as relative paths.
-    #
-    # @return (see #copy_drop)
-    def copy_drop_match(src, dst, glob, recreate_parent_path = true, cwd = nil)
-      log.debug('copy_drop_match: copying files matching %{glob} from: %{src} to: %{dst}' %
-                {glob: glob,
-                 src: src,
-                 dst: dst})
-
-      expanded_path = File.join(cwd.to_s, src)
-      unless File.readable?(expanded_path)
-        log.error('copy_drop_match: source not readable: %{src}' %
-                  {src: expanded_path})
-        return false
-      end
-
-      return if noop?
-
-      parents_option = recreate_parent_path ? ' --parents' : ''
-      # NOTE: Facter's execution expands the path of the first command,
-      #       which breaks `cd`. See FACT-2054.
-      cd_option = cwd.nil? ? '' : "true && cd '#{cwd}' && "
-      command_line = %(#{cd_option}find '#{src}' -type f -name '#{glob}' -exec cp --preserve #{parents_option} --target-directory '#{dst}' {} +)
-
-      return false unless create_path(dst)
-
-      exec_return_status(command_line)
-    end
-
     # Recursively create a directory
     #
     # @param path [String] Path to the directory to create.
@@ -931,6 +894,7 @@ EOS
     # @return [true] If directory creation is successful.
     # @return [false] If directory creation fails.
     def create_path(path)
+      return true if noop?
       return true if File.directory?(path)
       exec_return_status("mkdir --parents '#{path}'")
     end
@@ -1494,6 +1458,91 @@ EOS
     end
   end
 
+  # A check for gathering runtime information about a set of services
+  class Check::ServiceStatus < Check
+    def setup(**options)
+      @services = options[:services]
+      if @services.nil? || (! @services.is_a?(Array))
+        raise ArgumentError, 'Check::ServiceStatus must be initialized with a list of strings for the services: parameter.'
+      end
+
+      @service_pids = {}
+
+      # Everything here is specific to systemd or sysvinit
+      confine(kernel: 'linux')
+    end
+
+    def run
+      output_directory = File.join(state[:drop_directory], 'system')
+      create_path(output_directory)
+
+      if (! noop?) && executable?('systemctl')
+        @services.each do |service|
+          exec_drop("systemctl status '#{service}.service'", output_directory, 'systemctl-status.txt')
+        end
+      end
+
+      unless noop?
+        @services.each do |service|
+          if executable?('systemctl')
+            # SystemD makes this ridiculously easy.
+            pid = exec_return_result("systemctl show -p MainPID '#{service}.service'|cut -d= -f2").chomp
+            pid = Integer(pid) rescue nil
+            # SystemD returns MainPID=0 if the service is stopped or does
+            # not exist.
+            pid = nil if (pid == 0)
+
+            @service_pids[service] = pid
+          else
+            pidfile = case service
+                      when 'puppet'
+                        # puppet is a special snowflake
+                        '/var/run/puppetlabs/agent.pid'
+                      when 'pxp-agent'
+                        # pxp-agent is also a special snowflake
+                        '/var/run/puppetlabs/pxp-agent.pid'
+                      when 'pe-postgresql'
+                        # pe-postgresql is just waaaaayyy too special without SystemD,
+                        # skip it for now.
+                        next
+                      else
+                        service_name = service.sub('pe-', '')
+                        "/var/run/puppetlabs/#{service_name}/#{service_name}.pid"
+                      end
+
+            if File.readable?(pidfile)
+              pid = Integer(File.read(pidfile).chomp) rescue nil
+              pid_alive = unless pid.nil?
+                            Process.kill(0, pid) rescue nil
+                          end
+
+              @service_pids[service] = pid if pid_alive
+            end
+          end
+
+          next if @service_pids[service].nil?
+
+          proc_directory = File.join(output_directory, 'proc', service)
+          create_path(proc_directory)
+
+          ['cmdline','limits','environ'].each do |procfile|
+            copy_drop("/proc/#{@service_pids[service]}/#{procfile}", proc_directory, false)
+          end
+          data_drop(File.readlink("/proc/#{@service_pids[service]}/exe"), proc_directory, 'exe')
+          FileUtils.chmod_R('u+wX', proc_directory)
+
+          if executable?('systemctl')
+            # Grab CGroup settings for the service.
+            ['memory','cpu','blkio','devices','pids','systemd'].each do |fs|
+              copy_drop("/sys/fs/cgroup/#{fs}/system.slice/#{service}.service/", output_directory, true)
+            end
+            FileUtils.chmod_R('u+wX', "#{output_directory}/sys") if File.exist?("#{output_directory}/sys")
+          end
+        end
+      end
+    end
+  end
+
   # Scope which collects diagnostics related to the Puppet service
   #
   # This scope gathers:
@@ -1521,6 +1570,9 @@ EOS
                             copy: ['puppet/',
                                    'pxp-agent/'],
                             to: 'logs'}],
+                   services: ['puppet', 'pxp-agent'])
+    self.add_child(Check::ServiceStatus,
+                   name: 'status',
                    services: ['puppet', 'pxp-agent'])
   end
 
@@ -1568,6 +1620,9 @@ EOS
                    files: [{from: '/opt/puppetlabs/puppet-metrics-collector',
                             copy: ['puppetserver/'],
                             to: 'metrics'}])
+    self.add_child(Check::ServiceStatus,
+                   name: 'status',
+                   services: ['pe-puppetserver'])
   end
 
   # Scope which collects diagnostics related to the PuppetDB service
@@ -1602,6 +1657,9 @@ EOS
                    files: [{from: '/opt/puppetlabs/puppet-metrics-collector',
                             copy: ['puppetdb/'],
                             to: 'metrics'}])
+    self.add_child(Check::ServiceStatus,
+                   name: 'status',
+                   services: ['pe-puppetdb'])
   end
 
   # Scope which collects PE diagnostics
@@ -1666,7 +1724,9 @@ EOS
                                    'nginx/'],
                             to: 'logs'}],
                    services: ['pe-console-services', 'pe-nginx'])
-
+    self.add_child(Check::ServiceStatus,
+                   name: 'status',
+                   services: ['pe-console-services', 'pe-nginx'])
   end
 
   # Scope which collects diagnostics related to the PE Orchestration service
@@ -1721,6 +1781,9 @@ EOS
                    files: [{from: '/opt/puppetlabs/puppet-metrics-collector',
                             copy: ['orchestrator/'],
                             to: 'metrics'}])
+    self.add_child(Check::ServiceStatus,
+                   name: 'status',
+                   services: ['pe-ace-server', 'pe-bolt-server', 'pe-orchestration-services'])
   end
 
   # Scope which collects diagnostics related to the PE Postgres service
@@ -1752,6 +1815,9 @@ EOS
                                    'pg_upgrade_utility.log'],
                             to: 'logs/postgresql'}],
                   services: ['pe-postgresql'])
+    self.add_child(Check::ServiceStatus,
+                   name: 'status',
+                   services: ['pe-postgresql'])
   end
 
   # Runtime logic for executing diagnostics
@@ -2435,42 +2501,6 @@ module PuppetX
         display
 
         scope_directory = "#{@drop_directory}/system"
-
-        puppet_enterprise_services_list.each do |service|
-          ['memory','cpu','blkio','devices','pids','systemd'].each do |fs|
-            copy_drop_match("/sys/fs/cgroup/#{fs}/system.slice/#{service}.service/", scope_directory, '*')
-          end
-        end
-        FileUtils.chmod_R('u+wX', "#{scope_directory}/sys") if File.exist?("#{scope_directory}/sys")
-
-        pids = Array.new
-        pids.push(exec_return_result('pgrep -f "puppetlabs/ace-server"'))
-        pids.push(exec_return_result('pgrep -f "puppetlabs/bolt-server"'))
-        if(File.exists?('/var/run/puppetlabs/agent.pid'))
-          pids.push(File.read('/var/run/puppetlabs/agent.pid'))
-        end
-        pids.push(exec_return_result('pidof pxp-agent'))
-
-        ['console-services','orchestration-services','puppetdb','puppetserver'].each do |service|
-          pidfile = "/var/run/puppetlabs/#{service}/#{service}.pid"
-          if File.readable?(pidfile)
-            pids.push(File.read(pidfile).chomp!)
-          end
-        end
-        pids.each do |pid|
-          next unless ( pid.match?(/^\d+$/) && Dir.exists?("/proc/#{pid}") )
-          destpath="#{scope_directory}/proc/#{pid}"
-          ['cmdline','limits','environ'].each do |procfile|
-            copy_drop("/proc/#{pid}/#{procfile}", scope_directory)
-          end
-          data_drop(File.readlink("/proc/#{pid}/exe"), destpath, 'exe')
-        end
-        FileUtils.chmod_R('u+wX', "#{scope_directory}/proc") unless pids.empty?
-
-        puppet_enterprise_services_list.each do |service|
-          exec_drop("systemctl status #{service}", scope_directory, 'systemctl-status.txt')
-          data_drop("=" * 100 + "\n", scope_directory, 'systemctl-status.txt')
-        end
       end
 
       #=========================================================================

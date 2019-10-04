@@ -85,15 +85,4 @@ describe PuppetX::Puppetlabs::SupportScript::DiagnosticHelpers do
       expect(result).to be(false)
     end
   end
-
-  describe '#copy_drop_match' do
-    it 'logs an error and returns false if the source file is not readable' do
-      expect(script_logger).to \
-        receive(:error).with(%r{source not readable: /does/not/exist})
-
-      result = subject.copy_drop_match('/does/not/exist', '/tmp', 'foo*')
-
-      expect(result).to be(false)
-    end
-  end
 end
