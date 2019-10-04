@@ -1,5 +1,7 @@
 require 'logger'
 require 'stringio'
+require 'tmpdir'
+require 'fileutils'
 
 
 RSpec.configure do |c|
@@ -19,15 +21,19 @@ RSpec.shared_context 'stub script settings' do
     logger.level = Logger::DEBUG
     logger
   end
+  let(:temp_drop_dir) { Dir.mktmpdir }
+
 
   before(:each) do
     allow(PuppetX::Puppetlabs::SupportScript::Settings).to receive(:instance).and_return(script_settings)
     script_settings.log.add_logger(script_logger)
     script_settings.configure(noop: true)
+    script_settings.state[:drop_directory] = temp_drop_dir
   end
 
   after(:each) do
     script_logger.close
+    FileUtils.remove_entry_secure(temp_drop_dir, force: true)
   end
 end
 

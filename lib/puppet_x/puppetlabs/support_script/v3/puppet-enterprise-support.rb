@@ -3,6 +3,7 @@
 require 'date'
 require 'fileutils'
 require 'json'
+require 'pathname'
 require 'tempfile'
 require 'forwardable'
 require 'logger'
@@ -815,24 +816,35 @@ EOS
     # @param dst [String] Destination directory for output.
     # @param recreate_parent_path [Boolean] Whether to re-create parent
     #   directories of files in `src` underneath `dst`. Defaults to `true`.
+    # @param cwd [String, nil] Change to the directory given by `cwd` before
+    #   copying srcs as relative paths.
     #
     # @return [true] If file copying suceeds.
     # @return [false] If the copy command exits wiht an error or if
     #   there is an error creating the output path.
-    def copy_drop(src, dst, recreate_parent_path = true)
-      parents_option = recreate_parent_path ? ' --parents' : ''
-      recursive_option = File.directory?(src) ? ' --recursive' : ''
-      command_line = %(cp --dereference --preserve #{parents_option} #{recursive_option} '#{src}' '#{dst}')
-      unless File.readable?(src)
-        log.error('copy_drop: source not readable: %{src}' %
-                  {src: src})
-        return false
-      end
+    def copy_drop(src, dst, recreate_parent_path = true, cwd = nil)
       log.debug('copy_drop: copying: %{src} to: %{dst}' %
                 {src: src,
                  dst: dst})
+
+      expanded_path = File.join(cwd.to_s, src)
+      unless File.readable?(expanded_path)
+        log.error('copy_drop: source not readable: %{src}' %
+                  {src: expanded_path})
+        return false
+      end
+
       return if noop?
+
+      parents_option = recreate_parent_path ? ' --parents' : ''
+      recursive_option = File.directory?(src) ? ' --recursive' : ''
+      # NOTE: Facter's execution expands the path of the first command,
+      #       which breaks `cd`. See FACT-2054.
+      cd_option = cwd.nil? ? '' : "true && cd '#{relative}' && "
+      command_line = %(#{cd_option}cp --dereference --preserve #{parents_option} #{recursive_option} '#{src}' '#{dst}')
+
       return false unless create_path(dst)
+
       exec_return_status(command_line)
     end
 
@@ -844,22 +856,34 @@ EOS
     #   of copied files.
     # @param recreate_parent_path [Boolean] Whether to re-create parent
     #   directories of files in `src` underneath `dst`. Defaults to `true`.
+    # @param cwd [String, nil] Change to the directory given by `cwd` before
+    #   copying srcs as relative paths.
     #
     # @return (see #copy_drop)
-    def copy_drop_mtime(src, dst, age, recreate_parent_path = true)
-      parents_option = recreate_parent_path ? ' --parents' : ''
-      command_line = %(find '#{src}' -type f -mtime -#{age} | xargs --no-run-if-empty cp --preserve #{parents_option} --target-directory '#{dst}')
-      unless File.readable?(src)
-        log.error('copy_drop_mtime: source not readable: %{src}' %
-                  {src: src})
-        return false
-      end
+    def copy_drop_mtime(src, dst, age, recreate_parent_path = true, cwd = nil)
       log.debug('copy_drop_mtime: copying files newer than %{age} days from: %{src} to: %{dst}' %
                 {age: age,
                  src: src,
                  dst: dst})
+
+      expanded_path = File.join(cwd.to_s, src)
+      unless File.readable?(expanded_path)
+        log.error('copy_drop_mtime: source not readable: %{src}' %
+                  {src: expanded_path})
+        return false
+      end
+
       return if noop?
+
+      parents_option = recreate_parent_path ? ' --parents' : ''
+      # NOTE: Facter's execution expands the path of the first command,
+      #       which breaks `cd`. See FACT-2054.
+      cd_option = cwd.nil? ? '' : "true && cd '#{cwd}' && "
+      age_filter = (age.is_a?(Integer) && (age > 0)) ? " -mtime -#{age}" : ''
+      command_line = %(#{cd_option}find '#{src}' -type f #{age_filter} -exec cp --preserve #{parents_option} --target-directory '#{dst}' {} +)
+
       return false unless create_path(dst)
+
       exec_return_status(command_line)
     end
 
@@ -870,22 +894,33 @@ EOS
     # @param glob [String] Glob expression used to filter list of copied files.
     # @param recreate_parent_path [Boolean] Whether to re-create parent
     #   directories of files in `src` underneath `dst`. Defaults to `true`.
+    # @param cwd [String, nil] Change to the directory given by `cwd` before
+    #   copying srcs as relative paths.
     #
     # @return (see #copy_drop)
-    def copy_drop_match(src, dst, glob, recreate_parent_path = true)
-      parents_option = recreate_parent_path ? ' --parents' : ''
-      command_line = %(find '#{src}' -type f -name '#{glob}' | xargs --no-run-if-empty cp --preserve #{parents_option} --target-directory '#{dst}')
-      unless File.readable?(src)
-        log.error('copy_drop_match: source not readable: %{src}' %
-                  {src: src})
-        return false
-      end
+    def copy_drop_match(src, dst, glob, recreate_parent_path = true, cwd = nil)
       log.debug('copy_drop_match: copying files matching %{glob} from: %{src} to: %{dst}' %
                 {glob: glob,
                  src: src,
                  dst: dst})
+
+      expanded_path = File.join(cwd.to_s, src)
+      unless File.readable?(expanded_path)
+        log.error('copy_drop_match: source not readable: %{src}' %
+                  {src: expanded_path})
+        return false
+      end
+
       return if noop?
+
+      parents_option = recreate_parent_path ? ' --parents' : ''
+      # NOTE: Facter's execution expands the path of the first command,
+      #       which breaks `cd`. See FACT-2054.
+      cd_option = cwd.nil? ? '' : "true && cd '#{cwd}' && "
+      command_line = %(#{cd_option}find '#{src}' -type f -name '#{glob}' -exec cp --preserve #{parents_option} --target-directory '#{dst}' {} +)
+
       return false unless create_path(dst)
+
       exec_return_status(command_line)
     end
 
@@ -1324,6 +1359,353 @@ EOS
     end
   end
 
+  # A generic check for collecting files
+  #
+  # This check gathers a list of files and directories, subject to limits on
+  # age and disk space. The file list may include glob expressions which are
+  # expanded.
+  class Check::GatherFiles < Check
+    def setup(**options)
+      # TODO: assert that @files is a match for
+      # Array[Struct[{from    => Optional[String[1]],
+      #               copy    => Array[String[1], 1],
+      #               to      => String[1],
+      #               max_age => Optional[Integer]}]]
+      @files = options[:files]
+
+      # TODO: Solaris and AIX do `df` in their own very, very special ways.
+      #       `df` and `find -ls` on non-Linux returns 512 byte blocks instead of 1024.
+      #       The copy_drop* functions assume flags that are specific to
+      #       GNU `cp`.
+      confine(kernel: 'linux')
+    end
+
+    def run
+      @files.map! do |batch|
+        result = batch.dup
+        result[:max_age] ||= settings[:log_age]
+        # Resolve any globs in the copy array to a single list of files.
+        result[:copy] = if batch[:from].nil?
+                          Dir.glob(result[:copy])
+                        else
+                          base = Pathname.new(batch[:from])
+                          absolute_paths = result[:copy].map {|p| base.join(p) }
+                          Pathname.glob(absolute_paths).map {|p| p.relative_path_from(base).to_s }
+                        end
+        result[:to] = File.join(state[:drop_directory], result[:to])
+
+        result
+      end
+
+      return unless disk_available?
+
+      @files.each do |batch|
+        batch[:copy].each do |src|
+          copy_drop_mtime(src, batch[:to], batch[:max_age], true, batch[:from])
+        end
+      end
+    end
+
+    # Check there is enough disk space to copy the logs
+    #
+    # @return [true, false] A boolean value indicating whether enough
+    #   space is available.
+    def disk_available?
+      return true if noop?
+
+      df_output = exec_return_result("df '#{state[:drop_directory]}'|tail -n1|tr -s ' '|cut -d' ' -f4").chomp
+      free = Integer(df_output) rescue nil
+
+      if free.nil?
+        log.error('Could not determine disk space available on %{drop_dir}, df returned: %{output}'%
+                  {drop_dir: state[:drop_directory],
+                   output: df_output})
+        return false
+      end
+
+      required = 0
+      @files.each do |batch|
+        # NOTE: Facter's execution expands the path of the first command,
+        #       which breaks `cd`. See FACT-2054.
+        cd_option = batch[:from].nil? ? '' : "true && cd '#{batch[:from]}' && "
+        age_filter = (batch[:max_age].is_a?(Integer) && (batch[:max_age] > 0)) ? " -mtime -#{batch[:max_age]}" : ''
+        batch[:copy].each do |f|
+          used = exec_return_result("#{cd_option}find '#{f}' -type f #{age_filter} -ls|awk '{total=total+$2}END{print total}'").chomp
+          required += Integer(used) unless used.empty?
+        end
+      end
+
+      # We require double the free space as we copy the file, then copy it
+      # again into a compressed archive.
+      if ((required * 2) > free)
+        log.error("Not enough free disk space in %{output_dir} to gather %{name}.\nAvailable: %{available} MB, Required: %{required} MB" %
+                  {output_dir: settings[:dir],
+                   name: self.name,
+                   # Convert 1024 byte blocks to MB
+                   available: (free) / 1024,
+                   required: (required * 2) / 1024})
+
+        false
+      else
+        true
+      end
+    end
+  end
+
+  # Scope which collects diagnostics related to the Puppet service
+  #
+  # This scope gathers:
+  #
+  #   - Configuration files from /etc/puppetlabs for puppet,
+  #     facter, and pxp-agent
+  #   - Logs from /var/log/puppetlabs for puppet and pxp-agent
+  class Scope::Puppet < Scope
+    Scope::Base.add_child(self, name: 'puppet')
+
+    self.add_child(Check::GatherFiles,
+                   name: 'config',
+                   files: [{from: '/etc/puppetlabs',
+                            copy: ['facter/facter.conf',
+                                   'puppet/device.conf',
+                                   'puppet/hiera.yaml',
+                                   'puppet/puppet.conf',
+                                   'pxp-agent/modules/',
+                                   'pxp-agent/pxp-agent.conf'],
+                            to: 'enterprise/etc/puppetlabs',
+                            max_age: -1}])
+    self.add_child(Check::GatherFiles,
+                   name: 'logs',
+                   files: [{from: '/var/log/puppetlabs',
+                            copy: ['puppet/',
+                                   'pxp-agent/'],
+                            to: 'logs'}])
+  end
+
+  # Scope which collects diagnostics related to the PuppetServer service
+  #
+  # This scope gathers:
+  #
+  #   - Configuration files from /etc/puppetlabs for puppet,
+  #     puppetserver, and r10k
+  #   - Logs from /var/log/puppetlabs for puppetserver and r10k
+  #   - Metrics from /opt/puppetlabs/puppet-metrics-collector
+  #     for puppetserver
+  class Scope::PuppetServer < Scope
+    Scope::Base.add_child(self, name: 'puppetserver')
+
+    self.add_child(Check::GatherFiles,
+                   name: 'config',
+                   files: [{from: '/etc/puppetlabs',
+                            copy: ['code/hiera.yaml',
+                                   'puppet/auth.conf',
+                                   'puppet/autosign.conf',
+                                   'puppet/classfier.yaml',
+                                   'puppet/fileserver.conf',
+                                   'puppet/hiera.yaml',
+                                   'puppet/puppet.conf',
+                                   'puppet/puppetdb.conf',
+                                   'puppet/routes.yaml',
+                                   'puppetserver/bootstrap.cfg',
+                                   'puppetserver/code-manager-request-logging.xml',
+                                   'puppetserver/conf.d/',
+                                   'puppetserver/logback.xml',
+                                   'puppetserver/request-logging.xml',
+                                   'r10k/r10k.yaml'],
+                            to: 'enterprise/etc/puppetlabs',
+                            max_age: -1}])
+    self.add_child(Check::GatherFiles,
+                   name: 'logs',
+                   files: [{from: '/var/log/puppetlabs',
+                            copy: ['puppetserver/',
+                                   'r10k/'],
+                            to: 'logs'}])
+    self.add_child(Check::GatherFiles,
+                   name: 'metrics',
+                   files: [{from: '/opt/puppetlabs/puppet-metrics-collector',
+                            copy: ['puppetserver/'],
+                            to: 'metrics'}])
+  end
+
+  # Scope which collects diagnostics related to the PuppetDB service
+  #
+  # This scope gathers:
+  #
+  #   - Configuration files from /etc/puppetlabs for puppetdb
+  #   - Logs from /var/log/puppetlabs for puppetdb
+  #   - Metrics from /opt/puppetlabs/puppet-metrics-collector
+  #     for puppetdb
+  class Scope::PuppetDB < Scope
+    Scope::Base.add_child(self, name: 'puppetdb')
+
+    self.add_child(Check::GatherFiles,
+                   name: 'config',
+                   files: [{from: '/etc/puppetlabs',
+                            copy: ['puppetdb/bootstrap.cfg',
+                                   'puppetdb/certificate-whitelist',
+                                   'puppetdb/conf.d/',
+                                   'puppetdb/logback.xml',
+                                   'puppetdb/request-logging.xml'],
+                            to: 'enterprise/etc/puppetlabs',
+                            max_age: -1}])
+    self.add_child(Check::GatherFiles,
+                   name: 'logs',
+                   files: [{from: '/var/log/puppetlabs',
+                            copy: ['puppetdb/'],
+                            to: 'logs'}])
+    self.add_child(Check::GatherFiles,
+                   name: 'metrics',
+                   files: [{from: '/opt/puppetlabs/puppet-metrics-collector',
+                            copy: ['puppetdb/'],
+                            to: 'metrics'}])
+  end
+
+  # Scope which collects PE diagnostics
+  #
+  # This scope gathers:
+  #
+  #   - Configuration files from /etc/puppetlabs for the PE installer
+  #     and client tools
+  #   - Logs from /var/log/puppetlabs for the PE installer and
+  #     PE backup services
+  class Scope::Pe < Scope
+    Scope::Base.add_child(self, name: 'pe')
+
+    self.add_child(Check::GatherFiles,
+                   name: 'config',
+                   files: [{from: '/etc/puppetlabs',
+                            copy: ['client-tools/orchestrator.conf',
+                                   'client-tools/puppet-access.conf',
+                                   'client-tools/puppet-code.conf',
+                                   'client-tools/puppetdb.conf',
+                                   'client-tools/services.conf',
+                                   'enterprise/conf.d/',
+                                   'enterprise/hiera.yaml',
+                                   'installer/answers.install'],
+                            to: 'enterprise/etc/puppetlabs',
+                            max_age: -1}])
+    self.add_child(Check::GatherFiles,
+                   name: 'logs',
+                   files: [{from: '/var/log/puppetlabs',
+                            copy: ['installer/',
+                                   'pe-backup-tools/',
+                                   'puppet_infra_recover_config_cron.log'],
+                            to: 'logs'}])
+  end
+
+  # Scope which collects diagnostics related to the PE Console service
+  #
+  # This scope gathers:
+  #
+  #   - Configuration files from /etc/puppetlabs for pe-console-services,
+  #     and pe-nginx
+  #   - Logs from /var/log/puppetlabs for pe-console-services and pe-nginx
+  class Scope::Pe::Console < Scope
+    Scope::Pe.add_child(self, name: 'console')
+
+    self.add_child(Check::GatherFiles,
+                   name: 'config',
+                   files: [{from: '/etc/puppetlabs',
+                            copy: ['console-services/bootstrap.cfg',
+                                   'console-services/conf.d/',
+                                   'console-services/logback.xml',
+                                   'console-services/rbac-certificate-whitelist',
+                                   'console-services/request-logging.xml',
+                                   'nginx/conf.d/',
+                                   'nginx/nginx.conf'],
+                            to: 'enterprise/etc/puppetlabs',
+                            max_age: -1}])
+    self.add_child(Check::GatherFiles,
+                   name: 'logs',
+                   files: [{from: '/var/log/puppetlabs',
+                            copy: ['console-services/',
+                                   'nginx/'],
+                            to: 'logs'}])
+
+  end
+
+  # Scope which collects diagnostics related to the PE Orchestration service
+  #
+  # This scope gathers:
+  #
+  #   - Configuration files from /etc/puppetlabs for ace-server, bolt-server,
+  #     and pe-orchestration-services
+  #   - Logs from /var/log/puppetlabs for ace-server, bolt-server,
+  #     and pe-orchestration-services
+  #   - Metrics from /opt/puppetlabs/puppet-metrics-collector for
+  #     pe-orchestration-services
+  class Scope::Pe::Orchestration < Scope
+    Scope::Pe.add_child(self, name: 'orchestration')
+
+    self.add_child(Check::GatherFiles,
+                   name: 'config',
+                   files: [{from: '/etc/puppetlabs',
+                            copy: ['ace-server/conf.d/',
+                                   'bolt-server/conf.d/',
+                                   'orchestration-services/bootstrap.cfg',
+                                   # NOTE: The PE Orchestrator stores encryption keys in its conf.d.
+                                   #       Therefore, we explicitly list what to gather.
+                                   'orchestration-services/conf.d/analytics.conf',
+                                   'orchestration-services/conf.d/auth.conf',
+                                   'orchestration-services/conf.d/global.conf',
+                                   'orchestration-services/conf.d/inventory.conf',
+                                   'orchestration-services/conf.d/metrics.conf',
+                                   'orchestration-services/conf.d/orchestrator.conf',
+                                   'orchestration-services/conf.d/pcp-broker.conf',
+                                   'orchestration-services/conf.d/web-routes.conf',
+                                   'orchestration-services/conf.d/webserver.conf',
+                                   'orchestration-services/logback.xml',
+                                   'orchestration-services/request-logging.xml'],
+                            to: 'enterprise/etc/puppetlabs',
+                            max_age: -1}])
+    self.add_child(Check::GatherFiles,
+                   name: 'logs',
+                   files: [{from: '/var/log/puppetlabs',
+                            copy: ['ace-server/',
+                                   'bolt-server/',
+                                   'orchestration-services/'],
+                            to: 'logs'},
+                           # Copy all node activity logs without age limit.
+                           {from: '/var/log/puppetlabs',
+                            copy: ['orchestration-services/aggregate-node-count*.log*'],
+                            to: 'logs',
+                            max_age: -1}])
+    self.add_child(Check::GatherFiles,
+                   name: 'metrics',
+                   files: [{from: '/opt/puppetlabs/puppet-metrics-collector',
+                            copy: ['orchestrator/'],
+                            to: 'metrics'}])
+  end
+
+  # Scope which collects diagnostics related to the PE Postgres service
+  #
+  # This scope gathers:
+  #
+  #   - Configuration files from /opt/puppetlabs/server/data/postgresql
+  #     for pe-postgresql
+  #   - Logs from /var/log/puppetlabs for pe-postgresql
+  #   - Logs from /opt/puppetlabs/server/data/postgresql related to
+  #     pe-postgresql upgrades
+  class Scope::Pe::Postgres < Scope
+    Scope::Pe.add_child(self, name: 'postgres')
+
+    self.add_child(Check::GatherFiles,
+                   name: 'config',
+                   files: [{from: '/opt/puppetlabs/server/data/postgresql',
+                            copy: ['*/data/{postgresql.conf,postmaster.opts,pg_ident.conf,pg_hba.conf}'],
+                            to: 'enterprise/etc/puppetlabs/postgres',
+                            max_age: -1}])
+    self.add_child(Check::GatherFiles,
+                   name: 'logs',
+                   files: [{from: '/var/log/puppetlabs',
+                            copy: ['postgresql/*/'],
+                            to: 'logs'},
+                           {from: '/opt/puppetlabs/server/data/postgresql',
+                            copy: ['pg_upgrade_internal.log',
+                                   'pg_upgrade_server.log',
+                                   'pg_upgrade_utility.log'],
+                            to: 'logs/postgresql'}])
+  end
+
   # Runtime logic for executing diagnostics
   #
   # This class implements the runtime logic of the support script which
@@ -1705,8 +2087,6 @@ module PuppetX
       end
 
       def run
-        validate_output_directory_disk_space
-
         query_platform
 
         @drop_directory = state[:drop_directory]
@@ -1756,65 +2136,10 @@ module PuppetX
 
       def puppet_enterprise_config_list
         files = [
-          'ace-server/conf.d',
           'activemq/activemq.xml',
           'activemq/jetty.xml',
           'activemq/log4j.properties',
-          'bolt-server/conf.d',
-          'client-tools/orchestrator.conf',
-          'client-tools/puppet-access.conf',
-          'client-tools/puppet-code.conf',
-          'client-tools/puppetdb.conf',
-          'client-tools/services.conf',
-          'code/hiera.yaml',
-          'console-services/bootstrap.cfg',
-          'console-services/conf.d',
-          'console-services/logback.xml',
-          'console-services/rbac-certificate-whitelist',
-          'console-services/request-logging.xml',
-          'enterprise/conf.d',
-          'enterprise/hiera.yaml',
-          'facter/facter.conf',
-          'installer/answers.install',
           'mcollective/server.cfg',
-          'nginx/conf.d',
-          'nginx/nginx.conf',
-          'orchestration-services/bootstrap.cfg',
-          # NOTE: The PE Orchestrator stores encryption keys in its conf.d.
-          #       Therefore, we explicitly list what to gather.
-          'orchestration-services/conf.d/global.conf',
-          'orchestration-services/conf.d/metrics.conf',
-          'orchestration-services/conf.d/orchestrator.conf',
-          'orchestration-services/conf.d/web-routes.conf',
-          'orchestration-services/conf.d/webserver.conf',
-          'orchestration-services/conf.d/inventory.conf',
-          'orchestration-services/conf.d/auth.conf',
-          'orchestration-services/conf.d/pcp-broker.conf',
-          'orchestration-services/conf.d/analytics.conf',
-          'orchestration-services/logback.xml',
-          'orchestration-services/request-logging.xml',
-          'puppet/auth.conf',
-          'puppet/autosign.conf',
-          'puppet/classfier.yaml',
-          'puppet/device.conf',
-          'puppet/fileserver.conf',
-          'puppet/hiera.yaml',
-          'puppet/puppet.conf',
-          'puppet/puppetdb.conf',
-          'puppet/routes.yaml',
-          'puppetdb/bootstrap.cfg',
-          'puppetdb/certificate-whitelist',
-          'puppetdb/conf.d',
-          'puppetdb/logback.xml',
-          'puppetdb/request-logging.xml',
-          'puppetserver/bootstrap.cfg',
-          'puppetserver/code-manager-request-logging.xml',
-          'puppetserver/conf.d',
-          'puppetserver/logback.xml',
-          'puppetserver/request-logging.xml',
-          'pxp-agent/modules',
-          'pxp-agent/pxp-agent.conf',
-          'r10k/r10k.yaml'
         ]
         files.map { |file| "/etc/puppetlabs/#{file}" }
       end
@@ -1829,41 +2154,6 @@ module PuppetX
           '*/conf.d/*'
         ]
         files.map { |file| "/etc/puppetlabs/#{file}" }
-      end
-
-      # Puppet Enterprise PostgreSQL Config Files
-      # Instance Variables: @paths
-
-      def puppet_enterprise_database_config_list
-        files = [
-          'postgresql.conf',
-          'postmaster.opts',
-          'pg_ident.conf',
-          'pg_hba.conf'
-        ]
-        files.map { |file| "#{@paths[:server_data]}/postgresql/9.6/data/#{file}" }
-      end
-
-      # Puppet Enterprise PostgreSQL Upgrade Log Files
-      # Instance Variables: @paths
-
-      def puppet_enterprise_database_upgrade_log_list
-        files = [
-          'pg_upgrade_internal.log',
-          'pg_upgrade_server.log',
-          'pg_upgrade_utility.log'
-        ]
-        files.map { |file| "#{@paths[:server_data]}/postgresql/#{file}" }
-      end
-
-      # Used by validate_output_directory_disk_space.
-
-      def puppet_enterprise_directories_to_size_by_age
-        [
-          '/var/log/puppetlabs',
-          '/opt/puppetlabs/pe_metric_curl_cron_jobs',
-          '/opt/puppetlabs/puppet-metrics-collector'
-        ]
       end
 
       # Used by validate_output_directory_disk_space.
@@ -2011,15 +2301,6 @@ module PuppetX
         exec_drop("#{@paths[:puppetlabs_bin]}/puppet-infrastructure status --format json", scope_directory, 'puppet_infra_status.json')
         exec_drop("#{@paths[:puppetlabs_bin]}/puppet-infrastructure tune",                 scope_directory, 'puppet_infra_tune.txt')
         exec_drop("#{@paths[:puppetlabs_bin]}/puppet-infrastructure tune --current",       scope_directory, 'puppet_infra_tune_current.txt')
-
-        # Collect Puppet Enterprise Metrics.
-        recreate_parent_path = false
-        copy_drop_mtime('/opt/puppetlabs/pe_metric_curl_cron_jobs', @drop_directory, settings[:log_age], recreate_parent_path)
-        copy_drop_mtime('/opt/puppetlabs/puppet-metrics-collector', @drop_directory, settings[:log_age], recreate_parent_path)
-
-        # Collect all Orchestrator logs for the number of active nodes.
-        recreate_parent_path = true
-        copy_drop_match('/var/log/puppetlabs/orchestration-services', @drop_directory, 'aggregate-node-count*.log*', recreate_parent_path)
       end
 
       # Collect system configuration files.
@@ -2032,11 +2313,6 @@ module PuppetX
         scope_directory = "#{@drop_directory}/etc"
 
         puppet_enterprise_config_list.each do |source|
-          copy_drop(source, @drop_directory)
-        end
-
-        puppet_enterprise_database_config_list.each do |source|
-          # Scope Redirect: This drops into opt instead of etc.
           copy_drop(source, @drop_directory)
         end
 
@@ -2065,21 +2341,13 @@ module PuppetX
 
         scope_directory = "#{@drop_directory}/var/log"
 
-        copy_drop('/var/log/puppetlabs/installer', @drop_directory)
-
         recreate_parent_path = true
-        copy_drop_mtime('/var/log/puppetlabs', @drop_directory, settings[:log_age], recreate_parent_path)
 
         puppet_enterprise_services_list.each do |service|
           exec_drop("journalctl --full --output=short-iso --unit=#{service} --since '#{settings[:log_age]} days ago'", scope_directory, "#{service}-journalctl.log")
         end
 
         exec_drop('cat /var/lib/peadmin/.mcollective.d/client.log', scope_directory, 'peadmin_mcollective_client.log')
-
-        recreate_parent_path = false
-        puppet_enterprise_database_upgrade_log_list.each do |source|
-          copy_drop(source, scope_directory, recreate_parent_path)
-        end
       end
 
       # Collect system networking diagnostics.
@@ -2172,31 +2440,6 @@ module PuppetX
       #=========================================================================
       # Inspection
       #=========================================================================
-
-      # Verify free disk space for the output directory, or exit.
-      def validate_output_directory_disk_space
-        available = 0
-        required = 32_768
-        puppet_enterprise_directories_to_size_by_age.each do |directory|
-          if File.directory?(directory)
-            used = exec_return_result(%(find #{directory} -type f -mtime -#{settings[:log_age]} -exec du -sk {} \\; | cut -f1 | awk '{total=total+$1}END{print total}').chomp)
-            required += used.to_i unless used == ''
-          end
-        end
-        if settings[:filesync]
-          puppet_enterprise_directories_to_size_for_filesync.each do |directory|
-            if File.directory?(directory)
-              used = exec_return_result(%(du -sk #{directory} | cut -f1).chomp)
-              required += used.to_i unless used == ''
-            end
-          end
-        end
-        # Double the total used by source directories, to account for the original output directory and compressed archive.
-        required = (required * 2) / 1024
-        free = exec_return_result(%(df -Pk "#{settings[:dir]}" | grep -v Available).chomp)
-        available = free.split(' ')[3].to_i / 1024 unless free == ''
-        fail_and_exit("Not enough free disk space in #{settings[:dir]}. Available: #{available} MB, Required: #{required} MB") if available < required
-      end
 
       # Query the runtime platform.
       # Instance Variables: @platform

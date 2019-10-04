@@ -17,10 +17,6 @@ describe PuppetX::Puppetlabs::Support do
   end
 
   context 'with its supporting methods' do
-    it 'will validate the output_directory disk space' do
-      expect { support_script.validate_output_directory_disk_space }.to_not raise_error
-    end
-
     it 'will blacklist keys in a json hash' do
       settings = '{ "username": "public", "password": "private" }'
       blacklist = ['password']

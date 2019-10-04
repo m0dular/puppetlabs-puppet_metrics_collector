@@ -11,6 +11,8 @@ describe PuppetX::Puppetlabs::SupportScript::Runner do
 
   context 'when setting up' do
     it 'populates settings.state with a path to the output directory' do
+      script_settings.state.delete(:drop_directory)
+
       subject.setup
 
       expect(script_settings.state[:drop_directory]).to match(/puppet_enterprise_support/)
