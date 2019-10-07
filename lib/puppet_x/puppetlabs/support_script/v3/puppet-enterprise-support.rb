@@ -593,6 +593,11 @@ EOS
   # module should be included along with the {Configable} module and depends
   # on state initialized by {Runner#setup}
   module DiagnosticHelpers
+    PUP_PATHS = {puppetlabs_bin: '/opt/puppetlabs/bin',
+                 puppet_bin:     '/opt/puppetlabs/puppet/bin',
+                 server_bin:     '/opt/puppetlabs/server/bin',
+                 server_data:    '/opt/puppetlabs/server/data'}.freeze
+
     #===========================================================================
     # Utilities
     #===========================================================================
@@ -757,6 +762,28 @@ EOS
       end
     end
 
+    # Return the value of a Puppet setting
+    #
+    # Values are stored in a cache after being read. Subsequent calls
+    # will return the cached value.
+    #
+    # @param setting [String] The setting to retrieve.
+    def puppet_conf(setting, section = 'main')
+      state['puppet_conf'] ||= {}
+      state['puppet_conf'][section] ||= {}
+
+      cached_value = state['puppet_conf'][section].fetch(setting, nil)
+
+      if cached_value.nil?
+        value = exec_return_result("#{PUP_PATHS[:puppet_bin]}/puppet config print --section '#{section}' '#{setting}'")
+        state['puppet_conf'][section][setting] = value
+
+        value
+      else
+        cached_value
+      end
+    end
+
 
     #===========================================================================
     # Output
@@ -769,14 +796,21 @@ EOS
     # @param file [String] File under `dst` where output should be appended.
     # @param timeout [Integer] Optional number of seconds to allow for
     #   command execution. Defaults to 0 which disables the timeout.
+    # @param stderr [String, nil] An optional additional file to send
+    #   stderr to. Stderr is merged into stdout if not provided.
     #
     # @return [true] If the command completes successfully.
     # @return [false] If the command cannot be found, exits with a non-zero
     #   code, or there is an error creating the output path.
-    def exec_drop(command_line, dst, file, timeout = 0)
+    def exec_drop(command_line, dst, file, timeout = 0, stderr: nil)
       command = command_line.split(' ')[0]
       dst_file_path = File.join(dst, file)
-      command_line = %(#{command_line} 2>&1 >> '#{dst_file_path}')
+      if stderr.nil?
+        stderr_dst = '2>&1'
+      else
+        stderr_dst = "2>> '#{File.join(dst, stderr)}'"
+      end
+      command_line = %(#{command_line} #{stderr_dst} >> '#{dst_file_path}')
       unless executable?(command)
         log.error('exec_drop: command not found: %{command} cannot execute: %{command_line}' %
                   {command: command,
@@ -1543,6 +1577,40 @@ EOS
     end
   end
 
+  # Check the status of components in the puppet-agent package
+  #
+  # This check gathers:
+  #
+  #   - Facter output and debug-level logs
+  #   - A list of gems installed in the Puppet Ruby environment
+  #   - Whether Puppet's configured server hostname responds to a ping
+  #   - A copy of classes.txt, graphs/, last_run_summary.yaml, and
+  #     resources.txt from Puppet's statedir.
+  class Check::PuppetAgentStatus < Check::ServiceStatus
+    def run
+      super
+
+      ent_directory = File.join(state[:drop_directory], 'enterprise')
+      sys_directory = File.join(state[:drop_directory], 'system')
+      net_directory = File.join(state[:drop_directory], 'networking')
+
+      exec_drop("#{PUP_PATHS[:puppet_bin]}/facter --puppet --json --debug", sys_directory, 'facter_output.json', stderr: 'facter_output.debug.log')
+      exec_drop("#{PUP_PATHS[:puppet_bin]}/gem list --local", ent_directory, 'puppet_gems.txt')
+
+      unless noop? || (puppet_server = puppet_conf('server', 'agent')).empty?
+        exec_drop("ping -c 1 #{puppet_server}", net_directory, 'puppet_ping.txt')
+      end
+
+      unless (statedir = puppet_conf('statedir', 'agent')).empty?
+        output_dir = File.join(state[:drop_directory], 'enterprise', 'state')
+
+        ['classes.txt', 'graphs/', 'last_run_summary.yaml', 'resources.txt'].each do |file|
+          copy_drop_mtime(file, output_dir, -1, true, statedir)
+        end
+      end
+    end
+  end
+
   # Scope which collects diagnostics related to the Puppet service
   #
   # This scope gathers:
@@ -1571,10 +1639,28 @@ EOS
                                    'pxp-agent/'],
                             to: 'logs'}],
                    services: ['puppet', 'pxp-agent'])
-    self.add_child(Check::ServiceStatus,
+    self.add_child(Check::PuppetAgentStatus,
                    name: 'status',
                    services: ['puppet', 'pxp-agent'])
   end
+
+  # Check the status of components related to Puppet Server
+  class Check::PuppetServerStatus < Check::ServiceStatus
+    def run
+      super
+
+      ent_directory = File.join(state[:drop_directory], 'enterprise')
+
+      if SemanticPuppet::Version.parse(Puppet.version) >= SemanticPuppet::Version.parse('6.0.0')
+        exec_drop("#{PUP_PATHS[:server_bin]}/puppetserver ca list --all", ent_directory, 'certs.txt')
+      else
+        exec_drop("#{PUP_PATHS[:puppet_bin]}/puppet cert list --all", ent_directory, 'certs.txt')
+      end
+
+      exec_drop("#{PUP_PATHS[:server_bin]}/puppetserver gem list --local", ent_directory, 'puppetserver_gems.txt')
+    end
+  end
+
 
   # Scope which collects diagnostics related to the PuppetServer service
   #
@@ -1620,7 +1706,7 @@ EOS
                    files: [{from: '/opt/puppetlabs/puppet-metrics-collector',
                             copy: ['puppetserver/'],
                             to: 'metrics'}])
-    self.add_child(Check::ServiceStatus,
+    self.add_child(Check::PuppetServerStatus,
                    name: 'status',
                    services: ['pe-puppetserver'])
   end
@@ -1857,7 +1943,7 @@ EOS
     # @return [true] if setup completes successfully.
     # @return [false] if setup encounters an error.
     def setup
-      ['puppet', 'facter'].each do |lib|
+      ['puppet', 'facter', 'semantic_puppet/version'].each do |lib|
         begin
           require lib
         rescue ScriptError, StandardError => e
@@ -2307,28 +2393,7 @@ module PuppetX
           exec_drop("ls -alR #{directory}", scope_directory, "list_#{directory_file_name}.txt".squeeze('_'))
         end
 
-        # Collect Puppet certs.
-        if SemanticPuppet::Version.parse(Puppet.version) >= SemanticPuppet::Version.parse('6.0.0')
-          exec_drop("#{@paths[:puppetlabs_bin]}/puppetserver ca list --all", scope_directory, 'puppetserver_cert_list.txt')
-        else
-          exec_drop("#{@paths[:puppet_bin]}/puppet cert list --all", scope_directory, 'puppet_cert_list.txt')
-        end
-
-        # Collect Puppet config.
-        exec_drop("#{@paths[:puppet_bin]}/puppet config print --color=false",         scope_directory, 'puppet_config_print.txt')
-        exec_drop("#{@paths[:puppet_bin]}/puppet config print --color=false --debug", scope_directory, 'puppet_config_print_debug.txt')
-
-        # Collect Puppet facts.
-        exec_drop("#{@paths[:puppet_bin]}/puppet facts --color=false",         scope_directory, 'puppet_facts.txt')
-        exec_drop("#{@paths[:puppet_bin]}/puppet facts --color=false --debug", scope_directory, 'puppet_facts_debug.txt')
-
         # Collect Puppet and Puppet Server gems.
-        exec_drop("#{@paths[:puppet_bin]}/gem list --local",                  scope_directory, 'puppet_gem_list.txt')
-        exec_drop("#{@paths[:puppetlabs_bin]}/puppetserver gem list --local", scope_directory, 'puppetserver_gem_list.txt')
-
-        # Collect Puppet modules.
-        exec_drop("#{@paths[:puppet_bin]}/puppet module list --color=false",    scope_directory, 'puppet_modules_list.txt')
-        exec_drop("#{@paths[:puppet_bin]}/puppet module list --render-as yaml", scope_directory, 'puppet_modules_list.yaml')
 
         # Collect Puppet Enterprise Environment diagnostics.
         puppetserver_environments_json = curl_puppetserver_environments
@@ -2460,12 +2525,6 @@ module PuppetX
         display
 
         scope_directory = "#{@drop_directory}/networking"
-
-        # Puppet Networking:
-
-        unless noop?
-          exec_drop("ping -c 1 #{conf_puppet_agent_server}", scope_directory, 'puppet_ping.txt')
-        end
       end
 
       # Collect system resource usage diagnostics.
