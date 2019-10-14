@@ -1984,6 +1984,21 @@ EOS
                    name: 'classifier-groups')
   end
 
+  # Check the status of components related to the PE Orchestration service
+  #
+  # This check gathers:
+  #
+  #   - Output from the `status/v1/services` API
+  class Check::PeOrchestrationStatus < Check::ServiceStatus
+    def run
+      super
+
+      ent_directory = File.join(state[:drop_directory], 'enterprise')
+
+      data_drop(curl_cert_auth('https://127.0.0.1:8143/status/v1/services?level=debug'), ent_directory, 'orchestration_status.json')
+    end
+  end
+
   # Scope which collects diagnostics related to the PE Orchestration service
   #
   # This scope gathers:
@@ -2036,7 +2051,7 @@ EOS
                    files: [{from: '/opt/puppetlabs/puppet-metrics-collector',
                             copy: ['orchestrator/'],
                             to: 'metrics'}])
-    self.add_child(Check::ServiceStatus,
+    self.add_child(Check::PeOrchestrationStatus,
                    name: 'status',
                    services: ['pe-ace-server', 'pe-bolt-server', 'pe-orchestration-services'])
   end
@@ -2551,9 +2566,6 @@ module PuppetX
         pe_packages = query_packages_matching('^pe-|^puppet')
         data_drop(pe_packages, scope_directory, 'puppet_packages.txt')
 
-        # Collect Puppet Enterprise Service diagnostics.
-        data_drop(curl_orchestrator_status,     scope_directory, 'orchestrator_status.json')
-
         # Collect Puppet Enterprise Database diagnostics.
         data_drop(psql_settings,                scope_directory, 'postgres_settings.txt')
         data_drop(psql_stat_activity,           scope_directory, 'postgres_stat_activity.txt')
@@ -2792,20 +2804,6 @@ module PuppetX
         setting = exec_return_result(%(#{@paths[:puppet_bin]}/puppet config print --section master modulepath))
         setting = '/etc/puppetlabs/code/environments/production/modules:/etc/puppetlabs/code/modules:/opt/puppetlabs/puppet/modules' if setting == ''
         setting
-      end
-
-      #=========================================================================
-      # Query Puppet Enterprise API
-      #=========================================================================
-
-      # Common curl parameters used by the curl_* methods.
-
-      def curl_auth
-        "--cert #{conf_puppet_agent_hostcert} --key #{conf_puppet_agent_hostprivkey}"
-      end
-
-      def curl_opts
-        '--silent --show-error --connect-timeout 5 --max-time 60'
       end
 
       #=========================================================================
