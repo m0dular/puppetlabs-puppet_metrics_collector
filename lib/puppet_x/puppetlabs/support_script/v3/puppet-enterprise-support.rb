@@ -784,6 +784,48 @@ EOS
       end
     end
 
+    # Request a URL using curl
+    #
+    # @param url [String] The URL to request.
+    # @param headers [Hash{String => String}] A hash of headers to add to
+    #   the request where the key is the header name and the value is the
+    #   header value.
+    # @param options [Hash] A hash of options where the key is the name
+    #   of a `curl` long flag and the value is the value to pass with the
+    #   flag.
+    #
+    # @return [String] The body returned by the request.
+    def curl_url(url, headers: {}, **options)
+      headers = headers.reduce('') {|m, (k,v)| m += " -H '#{k}: #{v}'"}
+      opts = options.reduce('--insecure --silent --show-error --connect-timeout 5 --max-time 60') {|m, (k,v)| m += " --#{k} '#{v}'"}
+
+      exec_return_result("#{PUP_PATHS[:puppet_bin]}/curl #{headers} #{opts} '#{url}'")
+    end
+
+    # Request a URL using the agent's certificate
+    #
+    # @see curl_url
+    def curl_cert_auth(url, **options)
+      cert = puppet_conf('hostcert')
+      key = puppet_conf('hostprivkey')
+
+      unless File.readable?(cert)
+        logger.error('unable to read agent certificate for curl: %{cert}' %
+                     {cert: cert})
+        return ''
+      end
+
+      unless File.readable?(key)
+        logger.error('unable to read agent private key for curl: %{key}' %
+                     {key: key})
+        return ''
+      end
+
+      options[:key] = key
+      options[:cert] = cert
+
+      curl_url(url, **options)
+    end
 
     #===========================================================================
     # Output
@@ -874,7 +916,7 @@ EOS
       recursive_option = File.directory?(src) ? ' --recursive' : ''
       # NOTE: Facter's execution expands the path of the first command,
       #       which breaks `cd`. See FACT-2054.
-      cd_option = cwd.nil? ? '' : "true && cd '#{relative}' && "
+      cd_option = cwd.nil? ? '' : "true && cd '#{cwd}' && "
       command_line = %(#{cd_option}cp --dereference --preserve #{parents_option} #{recursive_option} '#{src}' '#{dst}')
 
       return false unless create_path(dst)
@@ -1645,22 +1687,76 @@ EOS
   end
 
   # Check the status of components related to Puppet Server
+  #
+  # This check gathers:
+  #
+  #   - A list of certificates issued by the Puppet CA
+  #   - A list of gems installed for use by Puppet Server
+  #   - Output from the `status/v1/services` API
+  #   - Output from the `puppet/v3/environment_modules` API
+  #   - Output from the `puppet/v3/environments` API
+  #   - environment.conf and hiera.yaml from each environment
+  #   - The disk space used by Code Manager cache, storage, client,
+  #     and staging directories.
+  #   - The output of `r10k deploy display`
+  #   - The disk space used by the server's File Bucket
   class Check::PuppetServerStatus < Check::ServiceStatus
     def run
       super
 
       ent_directory = File.join(state[:drop_directory], 'enterprise')
+      res_directory = File.join(state[:drop_directory], 'resources')
 
-      if SemanticPuppet::Version.parse(Puppet.version) >= SemanticPuppet::Version.parse('6.0.0')
-        exec_drop("#{PUP_PATHS[:server_bin]}/puppetserver ca list --all", ent_directory, 'certs.txt')
-      else
-        exec_drop("#{PUP_PATHS[:puppet_bin]}/puppet cert list --all", ent_directory, 'certs.txt')
+      if File.directory?(puppet_conf('cadir', 'master'))
+        if SemanticPuppet::Version.parse(Puppet.version) >= SemanticPuppet::Version.parse('6.0.0')
+          exec_drop("#{PUP_PATHS[:server_bin]}/puppetserver ca list --all", ent_directory, 'certs.txt')
+        else
+          exec_drop("#{PUP_PATHS[:puppet_bin]}/puppet cert list --all", ent_directory, 'certs.txt')
+        end
       end
 
       exec_drop("#{PUP_PATHS[:server_bin]}/puppetserver gem list --local", ent_directory, 'puppetserver_gems.txt')
+
+      data_drop(curl_cert_auth('https://127.0.0.1:8140/status/v1/services?level=debug'), ent_directory, 'puppetserver_status.json')
+      data_drop(curl_cert_auth('https://127.0.0.1:8140/puppet/v3/environment_modules'), ent_directory, 'modules.json')
+
+      # Collect data using environments from the puppet/v3/environments endpoint.
+      # Equivalent to puppetserver_environments() in puppet-enterprise-support.sh
+      puppetserver_environments_json = curl_cert_auth('https://127.0.0.1:8140/puppet/v3/environments')
+      data_drop(puppetserver_environments_json, ent_directory, 'puppetserver_environments.json')
+      puppetserver_environments = begin
+                                    JSON.parse(puppetserver_environments_json)
+                                  rescue JSON::ParserError
+                                    log.error('PuppetServerStatus: unable to parse puppetserver_environments_json')
+                                    {}
+                                  end
+
+      puppetserver_environments['environments'].keys.each do |environment|
+        environment_manifests = puppetserver_environments['environments'][environment]['settings']['manifest']
+        environment_directory = File.dirname(environment_manifests)
+        environment_drop_directory = File.join(ent_directory, 'etc/puppetlabs/code/environments', environment)
+
+        copy_drop('environment.conf', environment_drop_directory, false, environment_directory)
+        copy_drop('hiera.yaml', environment_drop_directory, false, environment_directory)
+      end unless puppetserver_environments.empty?
+
+      r10k_config = '/opt/puppetlabs/server/data/code-manager/r10k.yaml'
+      if File.exist?(r10k_config)
+        # Code Manager and File Sync diagnostics
+        code_staging_directory = '/etc/puppetlabs/code-staging'
+        filesync_directory = '/opt/puppetlabs/server/data/puppetserver/filesync'
+        code_manager_cache = '/opt/puppetlabs/server/data/code-manager'
+        exec_drop("du -h --max-depth=1 #{code_staging_directory}", res_directory, 'code_staging_sizes_from_du.txt') if File.directory?(code_staging_directory)
+        exec_drop("du -h --max-depth=1 #{filesync_directory}", res_directory, 'filesync_sizes_from_du.txt') if File.directory?(filesync_directory)
+        exec_drop("du -h --max-depth=1 #{code_manager_cache}", res_directory, 'r10k_cache_sizes_from_du.txt') if File.directory?(code_manager_cache)
+        exec_drop("#{PUP_PATHS[:puppet_bin]}/r10k deploy display -p --detail -c #{r10k_config}", ent_directory, 'r10k_deploy_display.txt')
+      end
+
+      # Collect Puppet Enterprise File Bucket diagnostics.
+      filebucket_directory = '/opt/puppetlabs/server/data/puppetserver/bucket'
+      exec_drop("du -sh #{filebucket_directory}", res_directory, 'filebucket_size_from_du.txt') if File.directory?(filebucket_directory)
     end
   end
-
 
   # Scope which collects diagnostics related to the PuppetServer service
   #
@@ -1693,7 +1789,11 @@ EOS
                                    'puppetserver/request-logging.xml',
                                    'r10k/r10k.yaml'],
                             to: 'enterprise/etc/puppetlabs',
-                            max_age: -1}])
+                            max_age: -1},
+                            {from: '/opt/puppetlabs/server/data/code-manager',
+                             copy: ['r10k.yaml'],
+                             to: 'enterprise/etc/puppetlabs/puppetserver',
+                             max_age: -1}])
     self.add_child(Check::ServiceLogs,
                    name: 'logs',
                    files: [{from: '/var/log/puppetlabs',
@@ -2382,42 +2482,6 @@ module PuppetX
         pe_packages = query_packages_matching('^pe-|^puppet')
         data_drop(pe_packages, scope_directory, 'puppet_packages.txt')
 
-        # Collect list of Puppet Enterprise files.
-        # Equivalent to list_pe_and_module_files() in puppet-enterprise-support.sh
-        pe_directories = puppet_enterprise_directories_list
-        pe_directories += conf_puppet_master_basemodulepath.split(':')
-        pe_directories += conf_puppet_master_environmentpath.split(':')
-        pe_directories += conf_puppet_master_modulepath.split(':')
-        pe_directories.uniq.sort.each do |directory|
-          directory_file_name = directory.tr('/', '_')
-          exec_drop("ls -alR #{directory}", scope_directory, "list_#{directory_file_name}.txt".squeeze('_'))
-        end
-
-        # Collect Puppet and Puppet Server gems.
-
-        # Collect Puppet Enterprise Environment diagnostics.
-        puppetserver_environments_json = curl_puppetserver_environments
-        data_drop(puppetserver_environments_json, scope_directory, 'puppetserver_environments.json')
-
-        # Collect data using environments from the puppet/v3/environments endpoint.
-        # Equivalent to puppetserver_environments() in puppet-enterprise-support.sh
-        begin
-          puppetserver_environments = JSON.parse(puppetserver_environments_json)
-        rescue JSON::ParserError
-          puppetserver_environments = {}
-          log.error('collect_scope_enterprise: unable to parse puppetserver_environments_json')
-        end
-        puppetserver_environments['environments'].keys.each do |environment|
-          environment_manifests = puppetserver_environments['environments'][environment]['settings']['manifest']
-          environment_directory = File.dirname(environment_manifests)
-          environment_modules_drop_directory = "#{scope_directory}/environments/#{environment}/modules"
-          exec_drop("#{@paths[:puppet_bin]}/puppet module list --color=false --environment=#{environment}",    environment_modules_drop_directory, 'puppet_modules_list.txt')
-          exec_drop("#{@paths[:puppet_bin]}/puppet module list --render-as yaml --environment=#{environment}", environment_modules_drop_directory, 'puppet_modules_list.yaml')
-          # Scope Redirect: This drops into etc instead of enterprise.
-          copy_drop("#{environment_directory}/environment.conf", @drop_directory)
-          copy_drop("#{environment_directory}/hiera.yaml",       @drop_directory)
-        end unless puppetserver_environments.empty?
-
         # Collect Puppet Enterprise Classifier groups.
         if settings[:classifier]
           data_drop(curl_classifier_groups, scope_directory, 'classifier_groups.json')
@@ -2429,8 +2493,6 @@ module PuppetX
         data_drop(curl_puppetdb_nodes,          scope_directory, 'puppetdb_nodes.json')
         data_drop(curl_puppetdb_status,         scope_directory, 'puppetdb_status.json')
         data_drop(curl_puppetdb_summary_stats,  scope_directory, 'puppetdb_summary_stats.json')
-        data_drop(curl_puppetserver_modules,    scope_directory, 'puppetserver_modules.json')
-        data_drop(curl_puppetserver_status,     scope_directory, 'puppetserver_status.json')
         data_drop(curl_rbac_directory_settings, scope_directory, 'rbac_directory_settings.json')
 
         # Collect Puppet Enterprise Database diagnostics.
@@ -2439,17 +2501,6 @@ module PuppetX
         data_drop(psql_thundering_herd,         scope_directory, 'thundering_herd.txt')
         data_drop(psql_replication_slots,       scope_directory, 'postgres_replication_slots.txt')
         data_drop(psql_replication_status,      scope_directory, 'postgres_replication_status.txt')
-
-        # Collect Puppet Enterprise Code Manager/r10k diagnostics.
-        codemanager_dir = "#{@paths[:server_data]}/code-manager"
-        exec_drop("du -h --max-depth=1 #{codemanager_dir}", scope_directory, 'r10k_cache_sizes_from_du.txt') if File.directory?(codemanager_dir)
-        r10k_yaml = '/etc/puppetlabs/r10k/r10k.yaml'
-        code_manager_yaml = "#{codemanager_dir}/r10k.yaml"
-        r10k_config = File.exist?(r10k_yaml) ? r10k_yaml : nil
-        r10k_config = code_manager_yaml if File.exist?(code_manager_yaml)
-        if r10k_config
-          exec_drop("#{@paths[:puppet_bin]}/r10k deploy display -p --detail -c #{r10k_config}", scope_directory, 'r10k_deploy_display.txt')
-        end
 
         # Collect Puppet Enterprise Mcollective diagnostics.
         if user_exists?('peadmin')
@@ -2460,21 +2511,12 @@ module PuppetX
           exec_drop("su #{inventory_command}", scope_directory, 'mco_inventory.txt', timeout)
         end
 
-        # Collect Puppet Enterprise FileSync diagnostics.
-        code_staging_directory = '/etc/puppetlabs/code-staging'
-        filesync_directory =     '/opt/puppetlabs/server/data/puppetserver/filesync'
-        exec_drop("du -h --max-depth=1 #{code_staging_directory}", scope_directory, 'code_staging_sizes_from_du.txt') if File.directory?(code_staging_directory)
-        exec_drop("du -h --max-depth=1 #{filesync_directory}",     scope_directory, 'filesync_sizes_from_du.txt')     if File.directory?(filesync_directory)
         if settings[:filesync]
           # Scope Redirect: This drops into etc instead of enterprise.
           copy_drop(code_staging_directory, @drop_directory)
           # Scope Redirect: This drops into opt instead of enterprise.
           copy_drop(filesync_directory, @drop_directory)
         end
-
-        # Collect Puppet Enterprise File Bucket diagnostics.
-        filebucket_directory = '/opt/puppetlabs/server/data/puppetserver/bucket'
-        exec_drop("du -sh #{filebucket_directory}", scope_directory, 'filebucket_size_from_du.txt') if File.directory?(filebucket_directory)
 
         # Collect Puppet Enterprise Infrastructure diagnostics.
         exec_drop("#{@paths[:puppetlabs_bin]}/puppet-infrastructure status --format json", scope_directory, 'puppet_infra_status.json')
@@ -2734,12 +2776,6 @@ module PuppetX
         pretty_json(status)
       end
 
-      def curl_puppetserver_status
-        return '' unless package_installed?('pe-puppetserver')
-        status = exec_return_result(%(#{@paths[:puppet_bin]}/curl #{curl_opts} --insecure -X GET https://127.0.0.1:8140/status/v1/services?level=debug))
-        pretty_json(status)
-      end
-
       def curl_puppetdb_status
         return '' unless package_installed?('pe-puppetdb')
         status = exec_return_result(%(#{@paths[:puppet_bin]}/curl #{curl_opts} #{curl_auth} --insecure -X GET https://127.0.0.1:#{puppetdb_ssl_port}/status/v1/services?level=debug))
@@ -2763,18 +2799,6 @@ module PuppetX
         return '' unless package_installed?('pe-puppetdb')
         status = exec_return_result(%(#{@paths[:puppet_bin]}/curl #{curl_opts} #{curl_auth} --insecure -X GET https://127.0.0.1:#{puppetdb_ssl_port}/pdb/admin/v1/summary-stats))
         pretty_json(status)
-      end
-
-      def curl_puppetserver_environments
-        return '' unless package_installed?('pe-puppetserver')
-        environments = exec_return_result(%(#{@paths[:puppet_bin]}/curl #{curl_opts} #{curl_auth} --insecure -X GET https://127.0.0.1:8140/puppet/v3/environments))
-        pretty_json(environments)
-      end
-
-      def curl_puppetserver_modules
-        return '' unless package_installed?('pe-puppetserver')
-        modules = exec_return_result(%(#{@paths[:puppet_bin]}/curl #{curl_opts} #{curl_auth} --insecure -X GET https://127.0.0.1:8140/puppet/v3/environment_modules))
-        pretty_json(modules)
       end
 
       def curl_rbac_directory_settings
