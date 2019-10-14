@@ -1811,6 +1811,35 @@ EOS
                    services: ['pe-puppetserver'])
   end
 
+  # Check the status of components related to PuppetDB
+  #
+  # This check gathers:
+  #
+  #   - Output from the `status/v1/services` API
+  #   - Output from the `pdb/admin/v1/summary-stats` API
+  #   - A list of certnames for nodes that PuppetDB considers to be active
+  class Check::PuppetDBStatus < Check::ServiceStatus
+    def run
+      super
+
+      ent_directory = File.join(state[:drop_directory], 'enterprise')
+
+      # Out of all PE services, PuppetDB occasionally conflicts with other
+      # installed software due to its use of ports 8080 and 8081.
+      #
+      # So, we check to see if an alternate port has been configured.
+      puppetdb_port = exec_return_result(%(cat /etc/puppetlabs/puppetdb/conf.d/jetty.ini | tr -d ' ' | grep --extended-regexp '^port=[[:digit:]]+$' | cut -d= -f2))
+      puppetdb_port = '8080' if puppetdb_port.empty?
+
+      data_drop(curl_url("http://127.0.0.1:#{puppetdb_port}/status/v1/services?level=debug"), ent_directory, 'puppetdb_status.json')
+      data_drop(curl_url("http://127.0.0.1:#{puppetdb_port}/pdb/admin/v1/summary-stats"), ent_directory, 'puppetdb_summary_stats.json')
+      data_drop(curl_url("http://127.0.0.1:#{puppetdb_port}/pdb/query/v4",
+                         request: 'GET',
+                         'data-urlencode': 'query=nodes[certname] {deactivated is null and expired is null}'),
+                ent_directory, 'puppetdb_nodes.json')
+    end
+  end
+
   # Scope which collects diagnostics related to the PuppetDB service
   #
   # This scope gathers:
@@ -1843,7 +1872,7 @@ EOS
                    files: [{from: '/opt/puppetlabs/puppet-metrics-collector',
                             copy: ['puppetdb/'],
                             to: 'metrics'}])
-    self.add_child(Check::ServiceStatus,
+    self.add_child(Check::PuppetDBStatus,
                    name: 'status',
                    services: ['pe-puppetdb'])
   end
@@ -2490,9 +2519,6 @@ module PuppetX
         # Collect Puppet Enterprise Service diagnostics.
         data_drop(curl_console_status,          scope_directory, 'console_status.json')
         data_drop(curl_orchestrator_status,     scope_directory, 'orchestrator_status.json')
-        data_drop(curl_puppetdb_nodes,          scope_directory, 'puppetdb_nodes.json')
-        data_drop(curl_puppetdb_status,         scope_directory, 'puppetdb_status.json')
-        data_drop(curl_puppetdb_summary_stats,  scope_directory, 'puppetdb_summary_stats.json')
         data_drop(curl_rbac_directory_settings, scope_directory, 'rbac_directory_settings.json')
 
         # Collect Puppet Enterprise Database diagnostics.
@@ -2749,18 +2775,6 @@ module PuppetX
         '--silent --show-error --connect-timeout 5 --max-time 60'
       end
 
-      # Port 8080 is often used by other services.
-
-      def puppetdb_port
-        setting = exec_return_result(%(cat /etc/puppetlabs/puppetdb/conf.d/jetty.ini | sed 's/ //g' | grep --extended-regexp '^port=[[:digit:]]+$'))
-        (setting == '') ? 8080 : setting.split('=')[1]
-      end
-
-      def puppetdb_ssl_port
-        setting = exec_return_result(%(cat /etc/puppetlabs/puppetdb/conf.d/jetty.ini | sed 's/ //g' | grep --extended-regexp '^ssl-port=[[:digit:]]+$'))
-        (setting == '') ? 8081 : setting.split('=')[1]
-      end
-
       # Execute a curl command and return the results or an empty string.
       # Instance Variables: @paths
 
@@ -2776,29 +2790,10 @@ module PuppetX
         pretty_json(status)
       end
 
-      def curl_puppetdb_status
-        return '' unless package_installed?('pe-puppetdb')
-        status = exec_return_result(%(#{@paths[:puppet_bin]}/curl #{curl_opts} #{curl_auth} --insecure -X GET https://127.0.0.1:#{puppetdb_ssl_port}/status/v1/services?level=debug))
-        pretty_json(status)
-      end
-
       def curl_classifier_groups
         return '' unless package_installed?('pe-console-services')
         groups = exec_return_result(%(#{@paths[:puppet_bin]}/curl #{curl_opts} #{curl_auth} --insecure -X GET https://127.0.0.1:4433/classifier-api/v1/groups))
         pretty_json(groups)
-      end
-
-      def curl_puppetdb_nodes
-        return '' unless package_installed?('pe-puppetdb')
-        query = 'query=nodes[certname] {deactivated is null and expired is null}'
-        nodes = exec_return_result(%(#{@paths[:puppet_bin]}/curl #{curl_opts} #{curl_auth} --insecure -X GET https://127.0.0.1:#{puppetdb_ssl_port}/pdb/query/v4 --data-urlencode '#{query}'))
-        pretty_json(nodes)
-      end
-
-      def curl_puppetdb_summary_stats
-        return '' unless package_installed?('pe-puppetdb')
-        status = exec_return_result(%(#{@paths[:puppet_bin]}/curl #{curl_opts} #{curl_auth} --insecure -X GET https://127.0.0.1:#{puppetdb_ssl_port}/pdb/admin/v1/summary-stats))
-        pretty_json(status)
       end
 
       def curl_rbac_directory_settings
