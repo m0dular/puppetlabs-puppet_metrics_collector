@@ -1910,6 +1910,44 @@ EOS
                             to: 'logs'}])
   end
 
+  # Check the status of components related to PE Console Services
+  #
+  # This check gathers:
+  #
+  #   - Output from the `status/v1/services` API
+  #   - The Directory Service settings, with passwords removed
+  class Check::PeConsoleStatus < Check::ServiceStatus
+    def run
+      super
+
+      ent_directory = File.join(state[:drop_directory], 'enterprise')
+
+      data_drop(curl_url('http://127.0.0.1:4432/status/v1/services?level=debug'), ent_directory, 'console_status.json')
+      console_ds_settings = curl_cert_auth('https://127.0.0.1:4433/rbac-api/v1/ds')
+      data_drop(pretty_json(console_ds_settings, %w[password ds_pw_obfuscated]), ent_directory, 'rbac_directory_settings.json')
+    end
+  end
+
+  # Check the status of components related to PE Console Services
+  #
+  # This check gathers:
+  #
+  #   - A listing of classifier groups configured in the console
+  #
+  # This check is not enabled by default.
+  class Check::PeConsoleGroups < Check
+    def setup(**options)
+      # Disabled by default as classifier groups configuration can contain
+      # sensitive data.
+      self.enabled = false
+    end
+
+    def run
+      ent_directory = File.join(state[:drop_directory], 'enterprise')
+      data_drop(curl_cert_auth('https://127.0.0.1:4433/classifier-api/v1/groups'), ent_directory, 'classifier.json')
+    end
+  end
+
   # Scope which collects diagnostics related to the PE Console service
   #
   # This scope gathers:
@@ -1939,9 +1977,11 @@ EOS
                                    'nginx/'],
                             to: 'logs'}],
                    services: ['pe-console-services', 'pe-nginx'])
-    self.add_child(Check::ServiceStatus,
+    self.add_child(Check::PeConsoleStatus,
                    name: 'status',
                    services: ['pe-console-services', 'pe-nginx'])
+    self.add_child(Check::PeConsoleGroups,
+                   name: 'classifier-groups')
   end
 
   # Scope which collects diagnostics related to the PE Orchestration service
@@ -2511,15 +2551,8 @@ module PuppetX
         pe_packages = query_packages_matching('^pe-|^puppet')
         data_drop(pe_packages, scope_directory, 'puppet_packages.txt')
 
-        # Collect Puppet Enterprise Classifier groups.
-        if settings[:classifier]
-          data_drop(curl_classifier_groups, scope_directory, 'classifier_groups.json')
-        end
-
         # Collect Puppet Enterprise Service diagnostics.
-        data_drop(curl_console_status,          scope_directory, 'console_status.json')
         data_drop(curl_orchestrator_status,     scope_directory, 'orchestrator_status.json')
-        data_drop(curl_rbac_directory_settings, scope_directory, 'rbac_directory_settings.json')
 
         # Collect Puppet Enterprise Database diagnostics.
         data_drop(psql_settings,                scope_directory, 'postgres_settings.txt')
@@ -2773,34 +2806,6 @@ module PuppetX
 
       def curl_opts
         '--silent --show-error --connect-timeout 5 --max-time 60'
-      end
-
-      # Execute a curl command and return the results or an empty string.
-      # Instance Variables: @paths
-
-      def curl_console_status
-        return '' unless package_installed?('pe-console-services')
-        status = exec_return_result(%(#{@paths[:puppet_bin]}/curl #{curl_opts} -X GET http://127.0.0.1:4432/status/v1/services?level=debug))
-        pretty_json(status)
-      end
-
-      def curl_orchestrator_status
-        return '' unless package_installed?('pe-orchestration-services')
-        status = exec_return_result(%(#{@paths[:puppet_bin]}/curl #{curl_opts} --insecure -X GET https://127.0.0.1:8143/status/v1/services?level=debug))
-        pretty_json(status)
-      end
-
-      def curl_classifier_groups
-        return '' unless package_installed?('pe-console-services')
-        groups = exec_return_result(%(#{@paths[:puppet_bin]}/curl #{curl_opts} #{curl_auth} --insecure -X GET https://127.0.0.1:4433/classifier-api/v1/groups))
-        pretty_json(groups)
-      end
-
-      def curl_rbac_directory_settings
-        return '' unless package_installed?('pe-console-services')
-        settings = exec_return_result(%(#{@paths[:puppet_bin]}/curl #{curl_opts} #{curl_auth} --insecure -X GET https://127.0.0.1:4433/rbac-api/v1/ds))
-        blacklist = %w[password ds_pw_obfuscated]
-        pretty_json(settings, blacklist)
       end
 
       #=========================================================================
