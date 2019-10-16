@@ -14,7 +14,7 @@ describe PuppetX::Puppetlabs::SupportScript::Check do
         allow(parent).to receive(:name).and_return('parent_object')
         test_object = described_class.new(parent, name: 'test_object')
 
-        expect(test_object.name).to eq('parent_object::test_object')
+        expect(test_object.name).to eq('parent_object.test_object')
       end
 
       it 'excludes its parents name if empty' do

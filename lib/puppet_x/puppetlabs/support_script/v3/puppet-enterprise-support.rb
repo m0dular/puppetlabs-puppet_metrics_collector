@@ -1130,7 +1130,7 @@ EOS
       @resolved_name = if @parent.nil? || @parent.name.empty?
                          @name
                        else
-                         [@parent.name, @name].join('::')
+                         [@parent.name, @name].join('.')
                        end
 
       @resolved_name.freeze
@@ -1213,7 +1213,7 @@ EOS
       @resolved_name = if @parent.nil? || @parent.name.empty?
                          @name
                        else
-                         [@parent.name, @name].join('::')
+                         [@parent.name, @name].join('.')
                        end
 
       @resolved_name.freeze

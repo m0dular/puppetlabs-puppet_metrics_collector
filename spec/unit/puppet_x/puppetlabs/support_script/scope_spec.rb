@@ -14,7 +14,7 @@ describe PuppetX::Puppetlabs::SupportScript::Scope do
       subject { described_class.new(parent, name: 'test_scope') }
 
       it 'includes its parents name if non-empty' do
-        expect(subject.name).to eq('parent_scope::test_scope')
+        expect(subject.name).to eq('parent_scope.test_scope')
       end
 
       it 'excludes its parents name if empty' do
@@ -96,7 +96,7 @@ describe PuppetX::Puppetlabs::SupportScript::Scope do
 
         subject.new(name: 'test_scope').run
 
-        expect(script_log.string).to match(/RuntimeError raised during test_scope::check_3/)
+        expect(script_log.string).to match(/RuntimeError raised during test_scope\.check_3/)
       end
 
       it 'logs time consumed by running children' do
@@ -104,13 +104,13 @@ describe PuppetX::Puppetlabs::SupportScript::Scope do
 
         subject.new(name: 'test_scope').run
 
-        expect(script_log.string).to match(/finished evaluation of test_scope::check_4 in 0\.05\d seconds/)
+        expect(script_log.string).to match(/finished evaluation of test_scope\.check_4 in 0\.05\d seconds/)
       end
 
       context 'when children are enabled or disabled by settings' do
         it 'only runs checks that match the :only settings' do
-          script_settings.configure(only: ['test_scope::scope_1',
-                                           'test_scope::check_3'])
+          script_settings.configure(only: ['test_scope.scope_1',
+                                           'test_scope.check_3'])
 
           expect_any_instance_of(check1).to receive(:run)
           expect_any_instance_of(check2).not_to receive(:run)
@@ -121,8 +121,8 @@ describe PuppetX::Puppetlabs::SupportScript::Scope do
         end
 
         it 'does not enable disabled checks unless explicitly listed in :only' do
-          script_settings.configure(only: ['test_scope::scope_1',
-                                           'test_scope::scope_2::check_2'])
+          script_settings.configure(only: ['test_scope.scope_1',
+                                           'test_scope.scope_2.check_2'])
 
           [check1, check2].each do |klass|
             klass.class_eval do
@@ -138,8 +138,8 @@ describe PuppetX::Puppetlabs::SupportScript::Scope do
         end
 
         it 'enables disabled checks if listed in :enable' do
-          script_settings.configure(enable: ['test_scope::scope_1::check_1',
-                                             'test_scope::check_3'])
+          script_settings.configure(enable: ['test_scope.scope_1.check_1',
+                                             'test_scope.check_3'])
 
           [scope1, check3].each do |klass|
             klass.class_eval do
@@ -165,7 +165,7 @@ describe PuppetX::Puppetlabs::SupportScript::Scope do
             end
           end
 
-          script_settings.configure(enable: ['test_scope::scope_1::check_1'])
+          script_settings.configure(enable: ['test_scope.scope_1.check_1'])
 
           expect_any_instance_of(check1).to receive(:run)
           expect_any_instance_of(check5).not_to receive(:run)
@@ -174,8 +174,8 @@ describe PuppetX::Puppetlabs::SupportScript::Scope do
         end
 
         it 'combines the effects of :only and :enable' do
-          script_settings.configure(only: ['test_scope::scope_1'],
-                                    enable: ['test_scope::scope_2::check_2'])
+          script_settings.configure(only: ['test_scope.scope_1'],
+                                    enable: ['test_scope.scope_2.check_2'])
 
           expect_any_instance_of(check1).to receive(:run)
           expect_any_instance_of(check2).to receive(:run)
@@ -184,10 +184,10 @@ describe PuppetX::Puppetlabs::SupportScript::Scope do
         end
 
         it 'combines the effects of :only, :enable, and :disable' do
-          script_settings.configure(only: ['test_scope::scope_1'],
-                                    enable: ['test_scope::scope_2::check_2'],
-                                    disable: ['test_scope::scope_1::check_1',
-                                              'test_scope::scope_2'])
+          script_settings.configure(only: ['test_scope.scope_1'],
+                                    enable: ['test_scope.scope_2.check_2'],
+                                    disable: ['test_scope.scope_1.check_1',
+                                              'test_scope.scope_2'])
 
           expect_any_instance_of(check1).not_to receive(:run)
           expect_any_instance_of(check2).not_to receive(:run)
