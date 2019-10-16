@@ -10,7 +10,7 @@ test_name 'PE-15434 - - Install pe_support_script Module' do
 
   step 'Re-install module from project source' do
     copy_module_to(
-      controllers + hosts_as('compile_master'),
+      controllers + hosts_as('compile_master') + hosts_as('pe_postgres'),
       module_name:        'pe_support_script',
       source:             proj_root,
       target_module_path: puppet_module_dir,
@@ -18,7 +18,7 @@ test_name 'PE-15434 - - Install pe_support_script Module' do
 
     # Stub out the checksum file to prevent `puppet module changes` from throwing an error.
     copy_file_to_remote(
-      controllers + hosts_as('compile_master'),
+      controllers + hosts_as('compile_master') + hosts_as('pe_postgres'),
       [puppet_module_dir, 'pe_support_script', 'checksums.json'].join('/'),
       '{}',
     )
