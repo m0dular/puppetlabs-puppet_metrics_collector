@@ -1753,6 +1753,10 @@ EOS
   #     facter, and pxp-agent
   #   - Logs from /var/log/puppetlabs for puppet and pxp-agent
   class Scope::Puppet < Scope
+    def setup(**options)
+      confine { package_installed?('puppet-agent') }
+    end
+
     Scope::Base.add_child(self, name: 'puppet')
 
     self.add_child(Check::ConfigFiles,
@@ -1860,6 +1864,10 @@ EOS
   #   - Metrics from /opt/puppetlabs/puppet-metrics-collector
   #     for puppetserver
   class Scope::PuppetServer < Scope
+    def setup(**options)
+      confine { package_installed?('pe-puppetserver') }
+    end
+
     Scope::Base.add_child(self, name: 'puppetserver')
 
     self.add_child(Check::ConfigFiles,
@@ -1941,6 +1949,10 @@ EOS
   #   - Metrics from /opt/puppetlabs/puppet-metrics-collector
   #     for puppetdb
   class Scope::PuppetDB < Scope
+    def setup(**options)
+      confine { package_installed?('pe-puppetdb') }
+    end
+
     Scope::Base.add_child(self, name: 'puppetdb')
 
     self.add_child(Check::ConfigFiles,
@@ -1996,6 +2008,7 @@ EOS
       super(**options)
 
       self.enabled = false
+      confine { package_installed?('pe-puppetserver') }
     end
   end
 
@@ -2008,6 +2021,10 @@ EOS
   #   - Logs from /var/log/puppetlabs for the PE installer and
   #     PE backup services
   class Scope::Pe < Scope
+    def setup(**options)
+      confine { package_installed?('pe-puppet-enterprise-release') }
+    end
+
     Scope::Base.add_child(self, name: 'pe')
 
     self.add_child(Check::ConfigFiles,
@@ -2090,6 +2107,10 @@ EOS
   #     and pe-nginx
   #   - Logs from /var/log/puppetlabs for pe-console-services and pe-nginx
   class Scope::Pe::Console < Scope
+    def setup(**options)
+      confine { package_installed?('pe-console-services') }
+    end
+
     Scope::Pe.add_child(self, name: 'console')
 
     self.add_child(Check::ConfigFiles,
@@ -2144,6 +2165,10 @@ EOS
   #   - Metrics from /opt/puppetlabs/puppet-metrics-collector for
   #     pe-orchestration-services
   class Scope::Pe::Orchestration < Scope
+    def setup(**options)
+      confine { package_installed?('pe-orchestration-services') }
+    end
+
     Scope::Pe.add_child(self, name: 'orchestration')
 
     self.add_child(Check::ConfigFiles,
@@ -2298,6 +2323,13 @@ EOS
   #   - Logs from /opt/puppetlabs/server/data/postgresql related to
   #     pe-postgresql upgrades
   class Scope::Pe::Postgres < Scope
+    def setup(**options)
+      # TODO: Should confine based on whether the pe-postgres package is
+      #       installed. But, the package includes a version number and
+      #       package_installed? does exact matches only.
+      confine { File.executable?("#{PUP_PATHS[:server_bin]}/psql") }
+    end
+
     Scope::Pe.add_child(self, name: 'postgres')
 
     self.add_child(Check::ConfigFiles,
