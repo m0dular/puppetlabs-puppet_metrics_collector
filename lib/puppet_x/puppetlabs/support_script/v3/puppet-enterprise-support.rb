@@ -1877,6 +1877,23 @@ EOS
                    services: ['pe-puppetdb'])
   end
 
+  # A Check that gathers miscellaneous PE status info
+  #
+  # This check gathers:
+  #
+  #   - Status information for the entire PE install
+  #   - Current tuning settings
+  #   - Recommended tuning settings
+  class Check::PeStatus < Check
+    def run
+      ent_directory = File.join(state[:drop_directory], 'enterprise')
+
+      exec_drop("#{PUP_PATHS[:puppetlabs_bin]}/puppet-infrastructure status --format json", ent_directory, 'pe_infra_status.json')
+      exec_drop("#{PUP_PATHS[:puppetlabs_bin]}/puppet-infrastructure tune",                 ent_directory, 'puppet_infra_tune.txt')
+      exec_drop("#{PUP_PATHS[:puppetlabs_bin]}/puppet-infrastructure tune --current",       ent_directory, 'puppet_infra_tune_current.txt')
+    end
+  end
+
   # Scope which collects PE diagnostics
   #
   # This scope gathers:
@@ -1908,6 +1925,8 @@ EOS
                                    'pe-backup-tools/',
                                    'puppet_infra_recover_config_cron.log'],
                             to: 'logs'}])
+    self.add_child(Check::PeStatus,
+                   name: 'status')
   end
 
   # Check the status of components related to PE Console Services
@@ -2681,9 +2700,6 @@ module PuppetX
         end
 
         # Collect Puppet Enterprise Infrastructure diagnostics.
-        exec_drop("#{@paths[:puppetlabs_bin]}/puppet-infrastructure status --format json", scope_directory, 'puppet_infra_status.json')
-        exec_drop("#{@paths[:puppetlabs_bin]}/puppet-infrastructure tune",                 scope_directory, 'puppet_infra_tune.txt')
-        exec_drop("#{@paths[:puppetlabs_bin]}/puppet-infrastructure tune --current",       scope_directory, 'puppet_infra_tune_current.txt')
       end
 
       # Collect system configuration files.
