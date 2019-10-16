@@ -2056,6 +2056,104 @@ EOS
                    services: ['pe-ace-server', 'pe-bolt-server', 'pe-orchestration-services'])
   end
 
+  # Check the status of the PE Postgres service
+  #
+  # This check gathers:
+  #
+  #   - A list of settings values that the server is using while running
+  #   - A list of currently established database connections and the queries
+  #     being executed
+  #   - A distribution of Puppet run start times for thundering herd detection
+  #   - The status of any configured replication slots
+  #   - The status of any active replication connections
+  #   - The size of database directories on disk
+  #   - The size of databases as reported by postgres
+  #   - The size of tables and indicies within databases
+  class Check::PePostgresqlStatus < Check::ServiceStatus
+    def run
+      super
+
+      ent_directory = File.join(state[:drop_directory], 'enterprise')
+      res_directory = File.join(state[:drop_directory], 'resources')
+
+      data_drop(psql_settings,                ent_directory, 'postgres_settings.txt')
+      data_drop(psql_stat_activity,           ent_directory, 'db_stat_activity.txt')
+      data_drop(psql_thundering_herd,         ent_directory, 'thundering_herd_query.txt')
+      data_drop(psql_replication_slots,       ent_directory, 'postgres_replication_slots.txt')
+      data_drop(psql_replication_status,      ent_directory, 'postgres_replication_status.txt')
+
+      exec_drop("ls -d #{PUP_PATHS[:server_data]}/postgresql/*/data #{PUP_PATHS[:server_data]}/postgresql/*/PG_* | xargs du -sh", res_directory, 'db_sizes_from_du.txt')
+
+      psql_data = psql_database_sizes
+      data_drop(psql_data, res_directory, 'db_sizes_from_psql.txt')
+
+      databases = psql_databases
+      databases = databases.lines.map(&:strip).grep(%r{^pe\-}).sort
+      databases.each do |database|
+        database_size_from_psql = psql_database_relation_sizes(database)
+        data_drop(database_size_from_psql, res_directory, 'db_relation_sizes.txt')
+      end
+    end
+
+    # TODO: Create a generic psql function that can run these queries.
+
+    def psql_databases
+      sql = 'SELECT datname FROM pg_catalog.pg_database;'
+      command = %(su pe-postgres --shell /bin/bash --command "#{PUP_PATHS[:server_bin]}/psql --tuples-only --command '#{sql}'")
+      exec_return_result(command)
+    end
+
+    def psql_database_sizes
+      sql = 'SELECT t1.datname AS db_name, pg_size_pretty(pg_database_size(t1.datname)) FROM pg_database t1 ORDER BY pg_database_size(t1.datname) DESC;'
+      command = %(su pe-postgres --shell /bin/bash --command "#{PUP_PATHS[:server_bin]}/psql --command '#{sql}'")
+      exec_return_result(command)
+    end
+
+    def psql_database_relation_sizes(database)
+      result = "#{database}\n\n"
+      sql = "SELECT '#{database}' AS db_name, nspname || '.' || relname AS relation, pg_size_pretty(pg_relation_size(C.oid)) \
+        FROM pg_class C LEFT JOIN pg_namespace N ON (N.oid = C.relnamespace) WHERE nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast') \
+        ORDER BY pg_relation_size(C.oid) DESC;"
+      command = %(su pe-postgres --shell /bin/bash --command "#{PUP_PATHS[:server_bin]}/psql --dbname #{database} --command \\"#{sql}\\"")
+      result << exec_return_result(command)
+    end
+
+    def psql_settings
+      sql = 'SELECT * FROM pg_settings;'
+      command = %(su pe-postgres --shell /bin/bash --command "#{PUP_PATHS[:server_bin]}/psql --tuples-only --command '#{sql}'")
+      exec_return_result(command)
+    end
+
+    def psql_stat_activity
+      sql = 'SELECT * FROM pg_stat_activity ORDER BY query_start;'
+      command = %(su pe-postgres --shell /bin/bash --command "#{PUP_PATHS[:server_bin]}/psql --command '#{sql}'")
+      exec_return_result(command)
+    end
+
+    def psql_replication_slots
+      sql = 'SELECT * FROM pg_replication_slots;'
+      command = %(su pe-postgres --shell /bin/bash --command "#{PUP_PATHS[:server_bin]}/psql --dbname pe-puppetdb --command \\"#{sql}\\"")
+      exec_return_result(command)
+    end
+
+    def psql_replication_status
+      sql = 'SELECT * FROM pg_stat_replication;'
+      command = %(su pe-postgres --shell /bin/bash --command "#{PUP_PATHS[:server_bin]}/psql --dbname pe-puppetdb --command \\"#{sql}\\"")
+      exec_return_result(command)
+    end
+
+    def psql_thundering_herd
+      sql = "SELECT date_part('month', start_time) AS month, date_part('day', start_time) \
+        AS day, date_part('hour', start_time) AS hour, date_part('minute', start_time) as minute, count(*) \
+        FROM reports \
+        WHERE start_time BETWEEN now() - interval '7 days' AND now() \
+        GROUP BY date_part('month', start_time), date_part('day', start_time), date_part('hour', start_time), date_part('minute', start_time) \
+        ORDER BY date_part('month', start_time) DESC, date_part('day', start_time) DESC, date_part( 'hour', start_time ) DESC, date_part('minute', start_time) DESC;"
+      command = %(su pe-postgres --shell /bin/bash --command "#{PUP_PATHS[:server_bin]}/psql --dbname pe-puppetdb --command \\"#{sql}\\"")
+      exec_return_result(command)
+    end
+  end
+
   # Scope which collects diagnostics related to the PE Postgres service
   #
   # This scope gathers:
@@ -2085,7 +2183,7 @@ EOS
                                    'pg_upgrade_utility.log'],
                             to: 'logs/postgresql'}],
                   services: ['pe-postgresql'])
-    self.add_child(Check::ServiceStatus,
+    self.add_child(Check::PePostgresqlStatus,
                    name: 'status',
                    services: ['pe-postgresql'])
   end
@@ -2566,13 +2664,6 @@ module PuppetX
         pe_packages = query_packages_matching('^pe-|^puppet')
         data_drop(pe_packages, scope_directory, 'puppet_packages.txt')
 
-        # Collect Puppet Enterprise Database diagnostics.
-        data_drop(psql_settings,                scope_directory, 'postgres_settings.txt')
-        data_drop(psql_stat_activity,           scope_directory, 'postgres_stat_activity.txt')
-        data_drop(psql_thundering_herd,         scope_directory, 'thundering_herd.txt')
-        data_drop(psql_replication_slots,       scope_directory, 'postgres_replication_slots.txt')
-        data_drop(psql_replication_status,      scope_directory, 'postgres_replication_status.txt')
-
         # Collect Puppet Enterprise Mcollective diagnostics.
         if user_exists?('peadmin')
           ping_command      = %(- peadmin --shell /bin/bash --command "#{@paths[:puppet_bin]}/mco ping")
@@ -2648,21 +2739,6 @@ module PuppetX
         display
 
         scope_directory = "#{@drop_directory}/resources"
-
-        # Puppet Resources:
-
-        exec_drop("ls -1 -d #{@paths[:server_data]}/postgresql/*/data  | xargs du -sh", scope_directory, 'db_sizes_from_du.txt')
-        exec_drop("ls -1 -d #{@paths[:server_data]}/postgresql/*/PG_9* | xargs du -sh", scope_directory, 'db_table_sizes_from_du.txt')
-
-        psql_data = psql_database_sizes
-        data_drop(psql_data, scope_directory, 'db_sizes_from_psql.txt')
-
-        databases = psql_databases
-        databases = databases.lines.map(&:strip).grep(%r{^pe\-}).sort
-        databases.each do |database|
-          database_size_from_psql = psql_database_relation_sizes(database)
-          data_drop(database_size_from_psql, scope_directory, 'db_relation_sizes_from_psql.txt')
-        end
       end
 
       # Collect system diagnostics.
@@ -2804,77 +2880,6 @@ module PuppetX
         setting = exec_return_result(%(#{@paths[:puppet_bin]}/puppet config print --section master modulepath))
         setting = '/etc/puppetlabs/code/environments/production/modules:/etc/puppetlabs/code/modules:/opt/puppetlabs/puppet/modules' if setting == ''
         setting
-      end
-
-      #=========================================================================
-      # Query Puppet PostgreSQL
-      #=========================================================================
-
-      # Execute a psql command using the pe-postgres and return the results or an empty string.
-      # Instance Variables: @paths
-
-      def psql_databases
-        return '' unless package_installed?('pe-puppetdb') && user_exists?('pe-postgres')
-        sql = 'SELECT datname FROM pg_catalog.pg_database;'
-        command = %(su pe-postgres --shell /bin/bash --command "#{@paths[:server_bin]}/psql --tuples-only --command '#{sql}'")
-        exec_return_result(command)
-      end
-
-      def psql_database_sizes
-        return '' unless package_installed?('pe-puppetdb') && user_exists?('pe-postgres')
-        sql = 'SELECT t1.datname AS db_name, pg_size_pretty(pg_database_size(t1.datname)) FROM pg_database t1 ORDER BY pg_database_size(t1.datname) DESC;'
-        command = %(su pe-postgres --shell /bin/bash --command "#{@paths[:server_bin]}/psql --command '#{sql}'")
-        exec_return_result(command)
-      end
-
-      def psql_database_relation_sizes(database)
-        return '' unless package_installed?('pe-puppetdb') && user_exists?('pe-postgres')
-        result = "#{database}\n\n"
-        sql = "SELECT '#{database}' AS db_name, nspname || '.' || relname AS relation, pg_size_pretty(pg_relation_size(C.oid)) \
-          FROM pg_class C LEFT JOIN pg_namespace N ON (N.oid = C.relnamespace) WHERE nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast') \
-          ORDER BY pg_relation_size(C.oid) DESC;"
-        command = %(su pe-postgres --shell /bin/bash --command "#{@paths[:server_bin]}/psql --dbname #{database} --command \\"#{sql}\\"")
-        result << exec_return_result(command)
-      end
-
-      def psql_settings
-        return '' unless package_installed?('pe-puppetdb') && user_exists?('pe-postgres')
-        sql = 'SELECT * FROM pg_settings;'
-        command = %(su pe-postgres --shell /bin/bash --command "#{@paths[:server_bin]}/psql --tuples-only --command '#{sql}'")
-        exec_return_result(command)
-      end
-
-      def psql_stat_activity
-        return '' unless package_installed?('pe-puppetdb') && user_exists?('pe-postgres')
-        sql = 'SELECT * FROM pg_stat_activity ORDER BY query_start;'
-        command = %(su pe-postgres --shell /bin/bash --command "#{@paths[:server_bin]}/psql --command '#{sql}'")
-        exec_return_result(command)
-      end
-
-      def psql_replication_slots
-        return '' unless package_installed?('pe-puppetdb') && user_exists?('pe-postgres')
-        sql = 'SELECT * FROM pg_replication_slots;'
-        command = %(su pe-postgres --shell /bin/bash --command "#{@paths[:server_bin]}/psql --dbname pe-puppetdb --command \\"#{sql}\\"")
-        exec_return_result(command)
-      end
-
-      def psql_replication_status
-        return '' unless package_installed?('pe-puppetdb') && user_exists?('pe-postgres')
-        sql = 'SELECT * FROM pg_stat_replication;'
-        command = %(su pe-postgres --shell /bin/bash --command "#{@paths[:server_bin]}/psql --dbname pe-puppetdb --command \\"#{sql}\\"")
-        exec_return_result(command)
-      end
-
-      def psql_thundering_herd
-        return '' unless package_installed?('pe-puppetdb') && user_exists?('pe-postgres')
-        sql = "SELECT date_part('month', start_time) AS month, date_part('day', start_time) \
-          AS day, date_part('hour', start_time) AS hour, date_part('minute', start_time) as minute, count(*) \
-          FROM reports \
-          WHERE start_time BETWEEN now() - interval '7 days' AND now() \
-          GROUP BY date_part('month', start_time), date_part('day', start_time), date_part('hour', start_time), date_part('minute', start_time) \
-          ORDER BY date_part('month', start_time) DESC, date_part('day', start_time) DESC, date_part( 'hour', start_time ) DESC, date_part('minute', start_time) DESC;"
-        command = %(su pe-postgres --shell /bin/bash --command "#{@paths[:server_bin]}/psql --dbname pe-puppetdb --command \\"#{sql}\\"")
-        exec_return_result(command)
       end
     end
   end
