@@ -51,9 +51,10 @@ describe PuppetX::Puppetlabs::SupportScript::DiagnosticHelpers do
   end
 
   describe '#exec_drop' do
-    it 'logs an error and returns false if a command is not executable' do
+    it 'logs a message and returns false if a command is not executable' do
+      allow(script_logger).to receive(:debug)
       expect(script_logger).to \
-        receive(:error).with(%r{command not found: /does/not/exist})
+        receive(:debug).with(%r{command not found: /does/not/exist})
 
       result = subject.exec_drop('/does/not/exist', '/tmp', 'output')
 
@@ -65,9 +66,10 @@ describe PuppetX::Puppetlabs::SupportScript::DiagnosticHelpers do
   end
 
   describe '#copy_drop' do
-    it 'logs an error and returns false if the source file is not readable' do
+    it 'logs a message and returns false if the source file is not readable' do
+      allow(script_logger).to receive(:debug)
       expect(script_logger).to \
-        receive(:error).with(%r{source not readable: /does/not/exist})
+        receive(:debug).with(%r{source not readable: /does/not/exist})
 
       result = subject.copy_drop('/does/not/exist', '/tmp')
 
@@ -76,9 +78,10 @@ describe PuppetX::Puppetlabs::SupportScript::DiagnosticHelpers do
   end
 
   describe '#copy_drop_mtime' do
-    it 'logs an error and returns false if the source file is not readable' do
+    it 'logs a message and returns false if the source file is not readable' do
+      allow(script_logger).to receive(:debug)
       expect(script_logger).to \
-        receive(:error).with(%r{source not readable: /does/not/exist})
+        receive(:debug).with(%r{source not readable: /does/not/exist})
 
       result = subject.copy_drop_mtime('/does/not/exist', '/tmp', 14)
 

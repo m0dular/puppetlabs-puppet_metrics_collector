@@ -171,7 +171,7 @@ EOS
     def self.console_logger
       logger = ::Logger.new($stderr)
       # TODO: Should be configurable.
-      logger.level = ::Logger::INFO
+      logger.level = ::Logger::WARN
       logger.formatter = proc do |severity, datetime, progname, msg|
                            "%s: %s\n" % [severity, msg]
                          end
@@ -932,7 +932,7 @@ EOS
       end
       command_line = %(#{command_line} #{stderr_dst} >> '#{dst_file_path}')
       unless executable?(command)
-        log.error('exec_drop: command not found: %{command} cannot execute: %{command_line}' %
+        log.debug('exec_drop: command not found: %{command} cannot execute: %{command_line}' %
                   {command: command,
                    command_line: command_line})
         return false
@@ -940,7 +940,16 @@ EOS
       log.debug('exec_drop: appending output of: %{command_line} to: %{dst_file_path}' %
                 {command_line: command_line,
                  dst_file_path: dst_file_path})
-      return if noop?
+
+      if noop?
+        display(' (noop) Collecting output of: %{command_line}' %
+                {command_line: command_line})
+        return
+      else
+        display(' ** Collecting output of: %{command_line}' %
+                {command_line: command_line})
+      end
+
       return false unless create_path(dst)
       exec_return_status(command_line, timeout)
     end
@@ -958,7 +967,15 @@ EOS
       log.debug('data_drop: appending to: %{dst_file_path}' %
                 {dst_file_path: dst_file_path})
 
-      return if noop?
+      if noop?
+        display(' (noop) Adding data to: %{dst_file_path}' %
+                {dst_file_path: dst_file_path})
+        return
+      else
+        display(' ** Adding data to: %{dst_file_path}' %
+                {dst_file_path: dst_file_path})
+      end
+
       return false unless create_path(dst)
       File.open(dst_file_path, 'a') { |file| file.puts(data) }
       true
@@ -983,12 +1000,19 @@ EOS
 
       expanded_path = File.join(cwd.to_s, src)
       unless File.readable?(expanded_path)
-        log.error('copy_drop: source not readable: %{src}' %
+        log.debug('copy_drop: source not readable: %{src}' %
                   {src: expanded_path})
         return false
       end
 
-      return if noop?
+      if noop?
+        display(' (noop) Copying: %{src}' %
+                {src: expanded_path})
+        return
+      else
+        display(' ** Copying: %{src}' %
+                {src: expanded_path})
+      end
 
       parents_option = recreate_parent_path ? ' --parents' : ''
       recursive_option = File.directory?(src) ? ' --recursive' : ''
@@ -1022,12 +1046,19 @@ EOS
 
       expanded_path = File.join(cwd.to_s, src)
       unless File.readable?(expanded_path)
-        log.error('copy_drop_mtime: source not readable: %{src}' %
+        log.debug('copy_drop_mtime: source not readable: %{src}' %
                   {src: expanded_path})
         return false
       end
 
-      return if noop?
+      if noop?
+        display(' (noop) Copying: %{src}' %
+                {src: expanded_path})
+        return
+      else
+        display(' ** Copying: %{src}' %
+                {src: expanded_path})
+      end
 
       parents_option = recreate_parent_path ? ' --parents' : ''
       # NOTE: Facter's execution expands the path of the first command,
@@ -1199,6 +1230,14 @@ EOS
         start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC, :float_second)
         log.info('starting evaluation of: %{name}' %
                  {name: child.name})
+
+        if child.class < Check
+          display('Evaluating check: %{name}' %
+                  {name: child.name})
+        else
+          display("\nEvaluating scope: %{name}" %
+                  {name: child.name})
+        end
 
         begin
           child.run
@@ -2511,8 +2550,8 @@ EOS
 
       drop_directory = File.join(parent_dir, dirname)
 
-      log.info('creating output directory: %{drop_directory}' %
-               {drop_directory: drop_directory})
+      display('Creating output directory: %{drop_directory}' %
+              {drop_directory: drop_directory})
 
       begin
         FileUtils.mkdir_p(drop_directory, mode: 0700) unless noop?
@@ -2580,8 +2619,8 @@ EOS
       tar_directory = File.basename(output_directory)
       output_archive = File.join(settings[:dir], tar_directory + '.tar.gz')
 
-      log.info('Creating output archive: %{output_archive}' %
-               {output_archive: output_archive})
+      display('Creating output archive: %{output_archive}' %
+              {output_archive: output_archive})
 
       return output_archive if noop?
 
@@ -2600,8 +2639,8 @@ EOS
       encrypted_archive = output_archive + '.gpg'
       gpg_homedir = File.join(state[:drop_directory], 'gpg')
 
-      log.info('Encrypting output archive file: %{output_archive}' %
-               {output_archive: output_archive})
+      display('Encrypting output archive file: %{output_archive}' %
+              {output_archive: output_archive})
 
       return encrypted_archive if noop?
 
@@ -2614,8 +2653,8 @@ EOS
     end
 
     def sftp_upload(output_archive)
-      log.info('Uploading: %{output_archive} via SFTP' %
-               {output_archive: output_archive})
+      display('Uploading: %{output_archive} via SFTP' %
+              {output_archive: output_archive})
 
       return if noop?
 
@@ -2654,8 +2693,8 @@ EOS
       begin
         sftp_output = Facter::Core::Execution.execute(sftp_command)
         if $?.to_i.zero?
-          log.info('File uploaded to: %{sftp_host}' %
-                   {sftp_host: SFTP_HOST})
+          display('File uploaded to: %{sftp_host}' %
+                  {sftp_host: SFTP_HOST})
           File.delete(output_archive)
         else
           ssh_key_file.unlink unless settings[:upload_key]
