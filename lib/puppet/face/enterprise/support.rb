@@ -159,7 +159,6 @@ Puppet::Face.define(:enterprise, '1.0.0') do
         PuppetX::Puppetlabs::SupportScript::Settings.instance.log.add_logger(PuppetX::Puppetlabs::SupportScript::LogManager.console_logger)
         support = PuppetX::Puppetlabs::SupportScript::Runner.new
         support.add_child(PuppetX::Puppetlabs::SupportScript::Scope::Base, name: '')
-        support.add_child(PuppetX::Puppetlabs::Support)
 
         return support.run
       else
