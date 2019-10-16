@@ -14,7 +14,6 @@ Puppet::Face.define(:enterprise, '1.0.0') do
 
     default_dir     = File.directory?('/var/tmp') ? '/var/tmp' : '/tmp'
     default_log_age = 14
-    default_scope   = %w[enterprise etc log networking resources system].join(',')
 
     supported_platforms = %w[redhat debian suse]
 
@@ -40,11 +39,6 @@ Puppet::Face.define(:enterprise, '1.0.0') do
       default_to { default_log_age }
     end
 
-    option '--scope LIST' do
-      summary "Scope (comma-delimited) of diagnostics to collect. Requires the --v3 parameter. Defaults to: #{default_scope}"
-      default_to { default_scope }
-    end
-
     option '--ticket NUMBER' do
       summary 'Support ticket number'
     end
@@ -67,6 +61,37 @@ Puppet::Face.define(:enterprise, '1.0.0') do
 
     option '--v3' do
       summary 'Use Version 3.0 of this command (experimental)'
+    end
+
+    option '--enable LIST' do
+      summary 'Comma-delimited list of scopes or checks to enable. Requires the --v3 parameter.'
+
+      before_action do |_, _, options|
+        if options.key?(:enable)
+          # Copied from Ruby's OptionParser handler for Array values
+          options[:enable] = options[:enable].split(',').collect {|ss| ss unless ss.empty?}
+        end
+      end
+    end
+
+    option '--disable LIST' do
+      summary 'Comma-delimited list of scopes or checks to disable. Requires the --v3 parameter.'
+
+      before_action do |_, arg, options|
+        if options.key?(:disable)
+          options[:disable] = options[:disable].split(',').collect {|ss| ss unless ss.empty?}
+        end
+      end
+    end
+
+    option '--only LIST' do
+      summary 'Comma-delimited list of of scopes or checks to run, disabling all others. Requires the --v3 parameter.'
+
+      before_action do |_, arg, options|
+        if options.key?(:only)
+          options[:only] = options[:only].split(',').collect {|ss| ss unless ss.empty?}
+        end
+      end
     end
 
     when_invoked do |options|
@@ -125,20 +150,6 @@ Puppet::Face.define(:enterprise, '1.0.0') do
         exit 1
       end
 
-      options_scope = options[:scope].tr(' ', '')
-
-      if options_scope != default_scope && options[:v3] != true
-        Puppet.err('The scope parameter requires the --v3 parameter.')
-        exit 1
-      end
-
-      if options_scope =~ %r{^(\w+)(,\w+)*$}
-        options[:scope] = options_scope
-      else
-        Puppet.err "The scope parameter must be a comma-delimited list. Got: #{options[:scope]}"
-        exit 1
-      end
-
       if options.key?(:ticket)
         if options[:ticket] =~ %r{^[\d\w\-]+$}
           support_script_parameters.push("-t#{options[:ticket]}")
@@ -151,6 +162,14 @@ Puppet::Face.define(:enterprise, '1.0.0') do
       if options[:upload] && (options[:v3] != true)
         Puppet.err('The upload parameter requires the --v3 parameter.')
         exit 1
+      end
+
+      [:enable, :disable, :only].each do |opt|
+        if options.key?(opt) && (options[:v3] != true)
+          Puppet.err('The --%{opt} parameter requires the --v3 parameter.' %
+                     {opt: opt})
+          exit 1
+        end
       end
 
       if options[:v3]

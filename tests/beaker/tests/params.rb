@@ -20,7 +20,7 @@ test_name 'Params' do
       target = 'customer-support.puppetlabs.net'
       # customer-support.puppetlabs.net does not resolve internally.
       on(host, "echo '10.230.16.41 #{target}' >> /etc/hosts")
-      result = on(host, puppet('enterprise support --ticket BEAKER_TESTING --v3 --scope system --upload'))
+      result = on(host, puppet('enterprise support --ticket BEAKER_TESTING --v3 --only base-status --upload'))
       server = result.stdout.match(%r{File uploaded to: (.*)}).captures.first
       assert_equal(server, target, "File should be uploaded to #{target} as specified by --upload")
     end

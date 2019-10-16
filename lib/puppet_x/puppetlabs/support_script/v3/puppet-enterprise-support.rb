@@ -2766,17 +2766,11 @@ if File.expand_path(__FILE__) == File.expand_path($PROGRAM_NAME)
     opts.separator ''
     opts.separator 'Options:'
     opts.separator ''
-    opts.on('-c', '--classifier', 'Include Classifier data') do
-      options[:classifier] = true
-    end
     opts.on('-d', '--dir DIRECTORY', "Output directory. Defaults to: #{default_dir}") do |dir|
       options[:dir] = dir
     end
     opts.on('-e', '--encrypt', 'Encrypt output using GPG') do
       options[:encrypt] = true
-    end
-    opts.on('-f', '--filesync', 'Include FileSync data') do
-      options[:filesync] = true
     end
     opts.on('-l', '--log_age DAYS', "Log age (in days) to collect. Defaults to: #{default_log_age}") do |log_age|
       options[:log_age] = log_age
@@ -2784,13 +2778,17 @@ if File.expand_path(__FILE__) == File.expand_path($PROGRAM_NAME)
     opts.on('-n', '--noop', 'Enable noop mode') do
       options[:noop] = true
     end
-    opts.on('-s', '--scope LIST', "Scope (comma-delimited) of diagnostics to collect. Defaults to: #{default_scope}") do |scope|
-      options_scope = scope.tr(' ', '')
-      unless options_scope =~ %r{^(\w+)(,\w+)*$}
-        puts "Error: The scope parameter must be a comma-delimited list. Got: #{scope}"
-        exit 1
-      end
-      options[:scope] = options_scope
+    opts.on('--enable LIST', Array, 'Comma-delimited list of scopes or checks to enable') do |list|
+      options[:enable] ||= []
+      options[:enable] += list
+    end
+    opts.on('--disable LIST', Array, 'Comma-delimited list of scopes or checks to disable') do |list|
+      options[:disable] ||= []
+      options[:disable] += list
+    end
+    opts.on('--only LIST', Array, 'Comma-delimited list of of scopes or checks to run, disabling all others') do |list|
+      options[:only] ||= []
+      options[:only] += list
     end
     opts.on('-t', '--ticket NUMBER', 'Support ticket number') do |ticket|
       options[:ticket] = ticket
