@@ -10,13 +10,14 @@ describe PuppetX::Puppetlabs::SupportScript::Runner do
   end
 
   context 'when setting up' do
-    it 'populates settings.state with a path to the output directory' do
-      script_settings.state.delete(:drop_directory)
+    # FIXME: This was moved to the `run` method
+    #it 'populates settings.state with a path to the output directory' do
+    #  script_settings.state.delete(:drop_directory)
 
-      subject.setup
+    #  subject.setup
 
-      expect(script_settings.state[:drop_directory]).to match(/puppet_enterprise_support/)
-    end
+    #  expect(script_settings.state[:drop_directory]).to match(/puppet_enterprise_support/)
+    #end
 
     it 'does not create multiple output directories if setup is called twice' do
       subject.setup

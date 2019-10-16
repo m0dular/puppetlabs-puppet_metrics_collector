@@ -94,6 +94,10 @@ Puppet::Face.define(:enterprise, '1.0.0') do
       end
     end
 
+    option '--list' do
+      summary 'List available scopes and checks that can be passed to --enable, --disable, or --only. Requires the --v3 parameter.'
+    end
+
     when_invoked do |options|
       support_module = File.expand_path(File.join(File.dirname(__FILE__), '../../../..'))
 
@@ -164,7 +168,7 @@ Puppet::Face.define(:enterprise, '1.0.0') do
         exit 1
       end
 
-      [:enable, :disable, :only].each do |opt|
+      [:enable, :disable, :only, :list].each do |opt|
         if options.key?(opt) && (options[:v3] != true)
           Puppet.err('The --%{opt} parameter requires the --v3 parameter.' %
                      {opt: opt})

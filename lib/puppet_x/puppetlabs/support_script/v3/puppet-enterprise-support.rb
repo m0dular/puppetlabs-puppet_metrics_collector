@@ -268,6 +268,7 @@ EOS
                    upload_disable_host_key_check: false,
                    z_do_not_delete_drop_directory: false,
 
+                   list: false,
                    enable: [],
                    disable: [],
                    only: [],
@@ -301,7 +302,7 @@ EOS
                   {key: key,
                    class: value.class}
               end
-            when :noop, :encrypt, :upload, :upload_disable_host_key_check, :z_do_not_delete_drop_directory
+            when :noop, :encrypt, :upload, :upload_disable_host_key_check, :list, :z_do_not_delete_drop_directory
               unless [true, false].include?(value)
                 raise ArgumentError, 'The %{key} option must be set to true or false. Got a value of type %{class}.' %
                   {key: key,
@@ -1253,6 +1254,25 @@ EOS
         log.debug('finished evaluation of %{name} in %<time>.3f seconds' %
                   {name: child.name,
                    time: (end_time - start_time)})
+      end
+    end
+
+    # Recursively print a description of each child to stdout
+    #
+    # @return [void]
+    def describe
+      @children.each do |child|
+        next unless child.suitable?
+
+        if child.enabled?
+          display child.name
+        else
+          display child.name + ' (opt-in with --enable)'
+        end
+
+        if child.is_a?(Scope)
+          child.describe
+        end
       end
     end
 
@@ -2489,9 +2509,6 @@ EOS
 
       state[:start_time] = DateTime.now
 
-      setup_output_directory or return false
-      setup_logfile
-
       true
     end
 
@@ -2507,12 +2524,22 @@ EOS
       setup or return 1
 
       begin
-        @child_specs.each do |(klass, opts)|
+        children = @child_specs.map do |(klass, opts)|
           opts ||= {}
-          child = klass.new(**opts)
-
-          child.run
+          klass.new(**opts)
         end
+
+
+        if settings[:list]
+          children.each(&:describe)
+
+          return 0
+        end
+
+        setup_output_directory or return 1
+        setup_logfile
+
+        children.each(&:run)
 
         cleanup_logfile
         output_file = create_output_archive(state[:drop_directory])
@@ -2789,6 +2816,9 @@ if File.expand_path(__FILE__) == File.expand_path($PROGRAM_NAME)
     opts.on('--only LIST', Array, 'Comma-delimited list of of scopes or checks to run, disabling all others') do |list|
       options[:only] ||= []
       options[:only] += list
+    end
+    opts.on('--list', 'List available scopes and checks that can be passed to --enable, --disable, or --only.') do |arg|
+      options[:list] = true
     end
     opts.on('-t', '--ticket NUMBER', 'Support ticket number') do |ticket|
       options[:ticket] = ticket
