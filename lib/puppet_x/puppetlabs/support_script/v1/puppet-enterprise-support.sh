@@ -758,7 +758,7 @@ db_size_from_psql() {
 }
 
 db_size_from_fs() {
-  run_diagnostic "ls -d /opt/puppetlabs/server/data/postgresql/*/PG_9* /opt/puppetlabs/server/data/postgresql/*/data | xargs du -sh" "resources/db_sizes_from_du.txt"
+  run_diagnostic "ls -d /opt/puppetlabs/server/data/postgresql/*/PG_* /opt/puppetlabs/server/data/postgresql/*/data | xargs du -sh" "resources/db_sizes_from_du.txt"
 }
 
 db_size_checks() {
