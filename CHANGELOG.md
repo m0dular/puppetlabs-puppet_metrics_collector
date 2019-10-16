@@ -1,3 +1,27 @@
+## [Release 2.13.0] - 2019-10-16
+
+### Summary
+
+Feature and bugfix release of the Support Script.
+
+### Features
+
+  - Support for PE 2019.2
+
+  - Support for RedHat 7 FIPS masters
+
+  - Large re-write of the `--v3` Ruby version of the support script.
+    This updated script groups diagnostics into scopes centered around
+    PE Services that can be toggled on and off with the new `--enable`,
+    `--disable`, and `--only` flags.
+
+
+### Bug Fixes
+
+  - The bash version of the support script properly collects disk space
+    data from Postgres 11
+
+
 ## [Release 2.12.0] - 2019-07-17
 
 ### Summary
@@ -559,6 +583,7 @@ installations, not agents.
     seconds.
 
 
+[Release 2.13.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/2.12.0...2.13.0
 [Release 2.12.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/2.11.0...2.12.0
 [Release 2.11.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/2.10.0...2.11.0
 [Release 2.10.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/2.9.1...2.10.0
