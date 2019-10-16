@@ -810,14 +810,14 @@ EOS
       key = puppet_conf('hostprivkey')
 
       unless File.readable?(cert)
-        logger.error('unable to read agent certificate for curl: %{cert}' %
-                     {cert: cert})
+        log.error('unable to read agent certificate for curl: %{cert}' %
+                  {cert: cert})
         return ''
       end
 
       unless File.readable?(key)
-        logger.error('unable to read agent private key for curl: %{key}' %
-                     {key: key})
+        log.error('unable to read agent private key for curl: %{key}' %
+                  {key: key})
         return ''
       end
 
@@ -825,6 +825,84 @@ EOS
       options[:cert] = cert
 
       curl_url(url, **options)
+    end
+
+    # Return package manager used by the OS executing the script
+    #
+    # @return [String] a string giving the name of the executable used
+    #   to manage packages
+    # @return [nil] for unknown operating systems
+    def pkg_manager
+      return state[:platform_packaging] if state.key?(:platform_packaging)
+
+      os = Facter.value('os')
+      pkg_manager = case os['name'].downcase
+                    when 'amazon', 'aix', 'centos', 'eos', 'fedora', 'redhat', 'rhel', 'sles'
+                      'rpm'
+                    when 'debian', 'cumulus', 'ubuntu'
+                      'dpkg'
+                    else
+                      log.error('Unknown packaging system for platform: %{os_name}' %
+                                {os_name: os['name'].downcase})
+                      nil
+                    end
+
+      state[:platform_packaging] = pkg_manager
+      pkg_manager
+    end
+
+    # Return a text report of installed packages that match a regex
+    #
+    # @return [String] a human-readble report of matching packages
+    #   along with a list of any changes made to files managed by
+    #   the package
+    def query_packages_matching(regex)
+      result = ''
+      acsiibar = '=' * 80
+      case pkg_manager
+      when 'rpm'
+        packages = exec_return_result(%(rpm --query --all | grep --extended-regexp '#{regex}'))
+        result = packages
+        packages.lines do |package|
+          result << "\nPackage: #{package}\n"
+          result << exec_return_result(%(rpm --verify #{package}))
+          result << "\n#{acsiibar}\n"
+        end
+      when 'dpkg'
+        packages = exec_return_result(%(dpkg-query --show --showformat '${Package}\n' | grep --extended-regexp '#{regex}'))
+        result = packages
+        packages.lines do |package|
+          result << "\nPackage: #{package}\n"
+          result << exec_return_result(%(dpkg --verify #{package}))
+          result << "\n#{acsiibar}\n"
+        end
+      else
+        log.warn('query_packages_matching: unable to list packages: no package manager for this OS')
+        result = 'no package manager for this OS'
+      end
+      result
+    end
+
+    # Query a package and report if it is installed
+    #
+    # @return [Boolean] a boolean value indicating whether the package is
+    #   installed.
+    def package_installed?(package)
+      status = false
+      state[:installed_packages] ||= {}
+      return state[:installed_packages][package] if state[:installed_packages].key?(package)
+
+      case pkg_manager
+      when 'rpm'
+        status = exec_return_result(%(rpm --query --info #{package})) =~ %r{Version}
+      when 'dpkg'
+        status = exec_return_status(%(dpkg-query  --show #{package}))
+      else
+        log.warn('package_installed: unable to query package for platform: no package manager for this OS')
+      end
+
+      state[:installed_packages][package] = status
+      status
     end
 
     #===========================================================================
@@ -1632,6 +1710,8 @@ EOS
   #     * /etc/puppetlabs
   #     * /var/log/puppetlabs
   #     * /opt/puppetlabs
+  #   - A listing of Puppet and PE packages installed on the system
+  #     along with verification output for each.
   class Check::PuppetAgentStatus < Check::ServiceStatus
     def run
       super
@@ -1660,6 +1740,8 @@ EOS
         drop_name = path.gsub('/','_') + '.txt.gz'
         exec_drop("find '#{path}' -ls | gzip -f9", find_directory, drop_name)
       end
+
+      data_drop(query_packages_matching('^pe-|^puppet'), ent_directory, 'puppet_packages.txt')
     end
   end
 
