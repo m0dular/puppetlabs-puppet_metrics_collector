@@ -1986,6 +1986,19 @@ EOS
     end
   end
 
+  # A Check that gathers files related to PE file sync state
+  #
+  # This check uses Check::GatherFiles to collect a copy of directories
+  # related to File Sync. It is disabled by default due to the high
+  # probablility that these directories contain sensitive data.
+  class Check::PeFileSync < Check::GatherFiles
+    def setup(**options)
+      super(**options)
+
+      self.enabled = false
+    end
+  end
+
   # Scope which collects PE diagnostics
   #
   # This scope gathers:
@@ -2019,6 +2032,16 @@ EOS
                             to: 'logs'}])
     self.add_child(Check::PeStatus,
                    name: 'status')
+    self.add_child(Check::PeFileSync,
+                   name: 'file-sync',
+                   files: [{from: '/etc/puppetlabs',
+                            copy: ['code-staging'],
+                            to: 'enterprise/etc/puppetlabs',
+                            max_age: -1},
+                           {from: '/opt/puppetlabs/server/data/puppetserver',
+                            copy: ['filesync'],
+                            to: 'enterprise/etc/puppetlabs',
+                            max_age: -1}])
   end
 
   # Check the status of components related to PE Console Services
