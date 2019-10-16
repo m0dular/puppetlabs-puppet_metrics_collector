@@ -1628,6 +1628,10 @@ EOS
   #   - Whether Puppet's configured server hostname responds to a ping
   #   - A copy of classes.txt, graphs/, last_run_summary.yaml, and
   #     resources.txt from Puppet's statedir.
+  #   - A listing of files present in the following directories:
+  #     * /etc/puppetlabs
+  #     * /var/log/puppetlabs
+  #     * /opt/puppetlabs
   class Check::PuppetAgentStatus < Check::ServiceStatus
     def run
       super
@@ -1635,6 +1639,7 @@ EOS
       ent_directory = File.join(state[:drop_directory], 'enterprise')
       sys_directory = File.join(state[:drop_directory], 'system')
       net_directory = File.join(state[:drop_directory], 'networking')
+      find_directory = File.join(state[:drop_directory], 'enterprise', 'find')
 
       exec_drop("#{PUP_PATHS[:puppet_bin]}/facter --puppet --json --debug", sys_directory, 'facter_output.json', stderr: 'facter_output.debug.log')
       exec_drop("#{PUP_PATHS[:puppet_bin]}/gem list --local", ent_directory, 'puppet_gems.txt')
@@ -1649,6 +1654,11 @@ EOS
         ['classes.txt', 'graphs/', 'last_run_summary.yaml', 'resources.txt'].each do |file|
           copy_drop_mtime(file, output_dir, -1, true, statedir)
         end
+      end
+
+      ['/etc/puppetlabs', '/var/log/puppetlabs', '/opt/puppetlabs'].each do |path|
+        drop_name = path.gsub('/','_') + '.txt.gz'
+        exec_drop("find '#{path}' -ls | gzip -f9", find_directory, drop_name)
       end
     end
   end
