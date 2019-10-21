@@ -915,21 +915,28 @@ EOS
     # @param command_line [String] Command line to execute.
     # @param dst [String] Destination directory for output.
     # @param file [String] File under `dst` where output should be appended.
-    # @param timeout [Integer] Optional number of seconds to allow for
+    # @param options [Hash] A Hash of options.
+    # @option options timeout [Integer] Optional number of seconds to allow for
     #   command execution. Defaults to 0 which disables the timeout.
-    # @param stderr [String, nil] An optional additional file to send
+    # @option options stderr [String, nil] An optional additional file to send
     #   stderr to. Stderr is merged into stdout if not provided.
     #
     # @return [true] If the command completes successfully.
-    # @return [false] If the command cannot be found, exits with a non-zero
-    #   code, or there is an error creating the output path.
-    def exec_drop(command_line, dst, file, timeout = 0, stderr: nil)
+    # @return [false] If the command cannot be found, exits with a non-zero code,
+    #   or there is an error creating the output path.
+    def exec_drop(command_line, dst, file, options = {})
+      default_options = {
+        'timeout' => 0,
+        'stderr' => nil
+      }
+      options = default_options.merge(options)
+
       command = command_line.split(' ')[0]
       dst_file_path = File.join(dst, file)
-      if stderr.nil?
+      if options['stderr'].nil?
         stderr_dst = '2>&1'
       else
-        stderr_dst = "2>> '#{File.join(dst, stderr)}'"
+        stderr_dst = "2>> '#{File.join(dst, options['stderr'])}'"
       end
       command_line = %(#{command_line} #{stderr_dst} >> '#{dst_file_path}')
       unless executable?(command)
@@ -952,7 +959,7 @@ EOS
       end
 
       return false unless create_path(dst)
-      exec_return_status(command_line, timeout)
+      exec_return_status(command_line, options['timeout'])
     end
 
     # Append data to an output file
@@ -1023,7 +1030,7 @@ EOS
       else
         dst_file = File.join(dst, "#{File.basename(src)}.gz")
       end
-      command_line = %(gzip -c '#{src}' > '#{dst_file}')
+      command_line = %(gzip -c '#{src}' > '#{dst_file}' && touch -c -r '#{src}')
 
       return false unless create_path(dst)
 
@@ -1034,20 +1041,28 @@ EOS
     #
     # @param src [String] Source directory for output.
     # @param dst [String] Destination directory for output.
-    # @param recreate_parent_path [Boolean] Whether to re-create parent
+    # @param options [Hash] A Hash of options.
+    # @option options recreate_parent_path [Boolean] Whether to re-create parent
     #   directories of files in `src` underneath `dst`. Defaults to `true`.
-    # @param cwd [String, nil] Change to the directory given by `cwd` before
-    #   copying srcs as relative paths.
+    # @option options cwd [String, nil] Change to the directory given by `cwd`
+    #   before copying `src`s as relative paths.
     #
-    # @return [true] If file copying suceeds.
-    # @return [false] If the copy command exits wiht an error or if
-    #   there is an error creating the output path.
-    def copy_drop(src, dst, recreate_parent_path = true, cwd = nil)
-      log.debug('copy_drop: copying: %{src} to: %{dst}' %
-                {src: src,
-                 dst: dst})
+    # @return [true] If the copy command succeeds.
+    # @return [false] If the copy command exits with an error,
+    #   or if there is an error creating the output path.
+    def copy_drop(src, dst, options = {})
+      default_options = {
+        'recreate_parent_path' => true,
+        'cwd' => nil
+      }
+      options = default_options.merge(options)
 
-      expanded_path = File.join(cwd.to_s, src)
+      log.debug('copy_drop: copying: %{src} to: %{dst} with options: %{options}' %
+                {src: src,
+                 dst: dst,
+                 options: options})
+
+      expanded_path = File.join(options['cwd'].to_s, src)
       unless File.readable?(expanded_path)
         log.debug('copy_drop: source not readable: %{src}' %
                   {src: expanded_path})
@@ -1063,11 +1078,11 @@ EOS
                 {src: expanded_path})
       end
 
-      parents_option = recreate_parent_path ? ' --parents' : ''
+      parents_option = options['recreate_parent_path'] ? ' --parents' : ''
       recursive_option = File.directory?(src) ? ' --recursive' : ''
       # NOTE: Facter's execution expands the path of the first command,
       #       which breaks `cd`. See FACT-2054.
-      cd_option = cwd.nil? ? '' : "true && cd '#{cwd}' && "
+      cd_option = options['cwd'].nil? ? '' : "true && cd '#{options['cwd']}' && "
       command_line = %(#{cd_option}cp --dereference --preserve #{parents_option} #{recursive_option} '#{src}' '#{dst}')
 
       return false unless create_path(dst)
@@ -1081,19 +1096,23 @@ EOS
     # @param dst [String] Destination directory for output.
     # @param age [Integer] Specifies maximum age, in days, to filter list
     #   of copied files.
-    # @param recreate_parent_path [Boolean] Whether to re-create parent
-    #   directories of files in `src` underneath `dst`. Defaults to `true`.
-    # @param cwd [String, nil] Change to the directory given by `cwd` before
-    #   copying srcs as relative paths.
+    # @param options [Hash] (see #copy_drop)
     #
     # @return (see #copy_drop)
-    def copy_drop_mtime(src, dst, age, recreate_parent_path = true, cwd = nil)
-      log.debug('copy_drop_mtime: copying files newer than %{age} days from: %{src} to: %{dst}' %
+    def copy_drop_mtime(src, dst, age, options = {})
+      default_options = {
+        'recreate_parent_path' => true,
+        'cwd' => nil
+      }
+      options = default_options.merge(options)
+
+      log.debug('copy_drop_mtime: copying files newer than %{age} days from: %{src} to: %{dst} with options: %{options}' %
                 {age: age,
                  src: src,
-                 dst: dst})
+                 dst: dst,
+                 options: options})
 
-      expanded_path = File.join(cwd.to_s, src)
+      expanded_path = File.join(options['cwd'].to_s, src)
       unless File.readable?(expanded_path)
         log.debug('copy_drop_mtime: source not readable: %{src}' %
                   {src: expanded_path})
@@ -1109,10 +1128,10 @@ EOS
                 {src: expanded_path})
       end
 
-      parents_option = recreate_parent_path ? ' --parents' : ''
+      parents_option = options['recreate_parent_path'] ? ' --parents' : ''
       # NOTE: Facter's execution expands the path of the first command,
       #       which breaks `cd`. See FACT-2054.
-      cd_option = cwd.nil? ? '' : "true && cd '#{cwd}' && "
+      cd_option = options['cwd'].nil? ? '' : "true && cd '#{options['cwd']}' && "
       age_filter = (age.is_a?(Integer) && (age > 0)) ? " -mtime -#{age}" : ''
       command_line = %(#{cd_option}find '#{src}' -type f #{age_filter} -exec cp --preserve #{parents_option} --target-directory '#{dst}' {} +)
 
@@ -1496,9 +1515,9 @@ EOS
       output_directory = File.join(state[:drop_directory], 'logs')
       FileUtils.mkdir_p(output_directory) unless noop?
 
-      compress_drop('/var/log/messages', output_directory)
-      compress_drop('/var/log/syslog', output_directory)
-      compress_drop('/var/log/system', output_directory)
+      compress_drop('/var/log/messages', output_directory, { 'recreate_parent_path' => false } )
+      compress_drop('/var/log/syslog', output_directory, { 'recreate_parent_path' => false } )
+      compress_drop('/var/log/system', output_directory, { 'recreate_parent_path' => false } )
 
       if documented_option?('dmesg', '--ctime')
         if documented_option?('dmesg', '--time-format')
@@ -1625,7 +1644,7 @@ EOS
 
       @files.each do |batch|
         batch[:copy].each do |src|
-          copy_drop_mtime(src, batch[:to], batch[:max_age], true, batch[:from])
+          copy_drop_mtime(src, batch[:to], batch[:max_age], { 'cwd' => batch[:from] } )
         end
       end
     end
@@ -1786,7 +1805,7 @@ EOS
           create_path(proc_directory)
 
           ['cmdline','limits','environ'].each do |procfile|
-            copy_drop("/proc/#{@service_pids[service]}/#{procfile}", proc_directory, false)
+            copy_drop("/proc/#{@service_pids[service]}/#{procfile}", proc_directory, { 'recreate_parent_path' => false })
           end
           data_drop(File.readlink("/proc/#{@service_pids[service]}/exe"), proc_directory, 'exe')
           FileUtils.chmod_R('u+wX', proc_directory)
@@ -1794,7 +1813,7 @@ EOS
           if executable?('systemctl')
             # Grab CGroup settings for the service.
             ['memory','cpu','blkio','devices','pids','systemd'].each do |fs|
-              copy_drop("/sys/fs/cgroup/#{fs}/system.slice/#{service}.service/", output_directory, true)
+              copy_drop("/sys/fs/cgroup/#{fs}/system.slice/#{service}.service/", output_directory)
             end
             FileUtils.chmod_R('u+wX', "#{output_directory}/sys") if File.exist?("#{output_directory}/sys")
           end
@@ -1838,7 +1857,7 @@ EOS
         output_dir = File.join(state[:drop_directory], 'enterprise', 'state')
 
         ['classes.txt', 'graphs/', 'last_run_summary.yaml', 'resources.txt'].each do |file|
-          copy_drop_mtime(file, output_dir, -1, true, statedir)
+          copy_drop_mtime(file, output_dir, -1, { 'cwd' => statedir } )
         end
       end
 
@@ -1938,8 +1957,8 @@ EOS
         environment_directory = File.dirname(environment_manifests)
         environment_drop_directory = File.join(ent_directory, 'etc/puppetlabs/code/environments', environment)
 
-        copy_drop('environment.conf', environment_drop_directory, false, environment_directory)
-        copy_drop('hiera.yaml', environment_drop_directory, false, environment_directory)
+        copy_drop('environment.conf', environment_drop_directory, { 'recreate_parent_path' => false, 'cwd' => environment_directory })
+        copy_drop('hiera.yaml', environment_drop_directory, { 'recreate_parent_path' => false, 'cwd' => environment_directory })
       end unless puppetserver_environments.empty?
 
       r10k_config = '/opt/puppetlabs/server/data/code-manager/r10k.yaml'
