@@ -982,6 +982,54 @@ EOS
       true
     end
 
+    # Compress file to a destination directory
+    #
+    # @param src [String] File to output.
+    # @param dst [String] Destination directory for output.
+    # @param options [Hash] A Hash of options.
+    # @option options recreate_parent_path [Boolean] Whether to re-create parent
+    #   directories of the `src` underneath `dst`. Defaults to `true`.
+    #
+    # @return [true] If the compress command succeeds.
+    # @return [false] If the compress command exits with an error,
+    #   or if there is an error creating the output path.
+    def compress_drop(src, dst, options = {})
+      default_options = { 'recreate_parent_path' => true }
+      options = default_options.merge(options)
+
+      log.debug('compress_drop: compressing: %{src} to: %{dst} with options: %{options}' %
+                {src: src,
+                 dst: dst,
+                 options: options})
+
+      unless File.readable?(src)
+        log.debug('compress_drop: source not readable: %{src}' %
+                  {src: src})
+        return false
+      end
+
+      if noop?
+        display(' (noop) Compressing: %{src}' %
+                {src: src})
+        return
+      else
+        display(' ** Compressing: %{src}' %
+                {src: src})
+      end
+
+      if options['recreate_parent_path']
+        dst_file = File.join(dst, "#{src}.gz")
+        dst = File.dirname(dst_file)
+      else
+        dst_file = File.join(dst, "#{File.basename(src)}.gz")
+      end
+      command_line = %(gzip -c '#{src}' > '#{dst_file}')
+
+      return false unless create_path(dst)
+
+      exec_return_status(command_line)
+    end
+
     # Copy directories or files to a destination directory
     #
     # @param src [String] Source directory for output.
@@ -1448,10 +1496,9 @@ EOS
       output_directory = File.join(state[:drop_directory], 'logs')
       FileUtils.mkdir_p(output_directory) unless noop?
 
-      # FIXME: These should be gzipped as they can be quite large.
-      copy_drop('/var/log/messages', output_directory, false)
-      copy_drop('/var/log/syslog', output_directory, false)
-      copy_drop('/var/log/system', output_directory, false)
+      compress_drop('/var/log/messages', output_directory)
+      compress_drop('/var/log/syslog', output_directory)
+      compress_drop('/var/log/system', output_directory)
 
       if documented_option?('dmesg', '--ctime')
         if documented_option?('dmesg', '--time-format')
