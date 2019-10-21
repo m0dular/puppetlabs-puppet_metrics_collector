@@ -2374,67 +2374,189 @@ EOS
       databases = psql_databases
       databases = databases.lines.map(&:strip).grep(%r{^pe\-}).sort
       databases.each do |database|
-        database_size_from_psql = psql_database_relation_sizes(database)
-        data_drop(database_size_from_psql, res_directory, 'db_relation_sizes.txt')
+        data_drop(psql_database_relation_sizes(database),          res_directory, 'db_relation_sizes.txt')
+        data_drop(psql_database_table_sizes(database),             res_directory, 'db_table_sizes.txt')
+        data_drop(psql_total_relation_sizes(database),             res_directory, 'db_total_relation_sizes.txt')
+        data_drop(psql_database_relation_sizes_by_table(database), res_directory, 'db_relation_sizes_by_table.txt')
       end
     end
 
-    # TODO: Create a generic psql function that can run these queries.
+    # Execute psql queries.
+    #
+    # @param sql [String] SQL to execute via a psql command.
+    # @param psql_options [String] list of options to pass to the psql command.
+    #
+    # @return (see #exec_return_result)
+
+    def psql_return_result(sql, psql_options = '')
+      command = %(su pe-postgres --shell /bin/bash --command "true && cd /tmp && #{PUP_PATHS[:server_bin]}/psql #{psql_options} --command \\"#{sql}\\"")
+      exec_return_result(command)
+    end
 
     def psql_databases
-      sql = 'SELECT datname FROM pg_catalog.pg_database;'
-      command = %(su pe-postgres --shell /bin/bash --command "#{PUP_PATHS[:server_bin]}/psql --tuples-only --command '#{sql}'")
-      exec_return_result(command)
+      sql = %Q(SELECT datname FROM pg_catalog.pg_database;)
+      psql_options = '--tuples-only'
+      psql_return_result(sql)
     end
 
     def psql_database_sizes
-      sql = 'SELECT t1.datname AS db_name, pg_size_pretty(pg_database_size(t1.datname)) FROM pg_database t1 ORDER BY pg_database_size(t1.datname) DESC;'
-      command = %(su pe-postgres --shell /bin/bash --command "#{PUP_PATHS[:server_bin]}/psql --command '#{sql}'")
-      exec_return_result(command)
+      sql = %Q(
+        SELECT t1.datname AS db_name, pg_size_pretty(pg_database_size(t1.datname))
+        FROM pg_database t1
+        ORDER BY pg_database_size(t1.datname) DESC;
+      )
+      psql_return_result(sql)
     end
+
+    # pg_relation_size: Disk space used by the specified fork ('main', 'fsm', 'vm', or 'init' ... defaults to 'main') of the specified table or index.
 
     def psql_database_relation_sizes(database)
       result = "#{database}\n\n"
-      sql = "SELECT '#{database}' AS db_name, nspname || '.' || relname AS relation, pg_size_pretty(pg_relation_size(C.oid)) \
-        FROM pg_class C LEFT JOIN pg_namespace N ON (N.oid = C.relnamespace) WHERE nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast') \
-        ORDER BY pg_relation_size(C.oid) DESC;"
-      command = %(su pe-postgres --shell /bin/bash --command "#{PUP_PATHS[:server_bin]}/psql --dbname #{database} --command \\"#{sql}\\"")
-      result << exec_return_result(command)
+      sql = %Q(
+        SELECT '#{database}' AS db_name, nspname || '.' || relname AS relation, pg_size_pretty(pg_relation_size(C.oid))
+        FROM pg_class C LEFT JOIN pg_namespace N ON (N.oid = C.relnamespace)
+        WHERE nspname NOT IN ('information_schema', 'pg_catalog', 'pg_toast')
+        ORDER BY pg_relation_size(C.oid) DESC;
+      )
+      psql_options = "--dbname #{database}"
+      result << psql_return_result(sql, psql_options)
+    end
+
+    # pg_table_size: Disk space used by the specified table, excluding indexes but including TOAST, and all of the forks: 'main', 'fsm', 'vm', 'init'.
+
+    def psql_database_table_sizes(database)
+      result = "#{database}\n\n"
+      sql = %Q(
+        SELECT '#{database}' AS db_name, nspname || '.' || relname AS relation, pg_size_pretty(pg_table_size(C.oid))
+        FROM pg_class C LEFT JOIN pg_namespace N ON (N.oid = C.relnamespace)
+        WHERE nspname NOT IN ('information_schema', 'pg_catalog', 'pg_toast')
+        ORDER BY pg_table_size(C.oid) DESC;
+      )
+      psql_options = "--dbname #{database}"
+      result << psql_return_result(sql, psql_options)
+    end
+
+    # pg_total_relation_size: Total disk space used by the specified table, including indexes, TOAST, and all of the forks: 'main', 'fsm', 'vm', 'init'.
+
+    def psql_total_relation_sizes(database)
+      result = "#{database}\n\n"
+      sql = %Q(
+        SELECT '#{database}' AS db_name, nspname || '.' || relname AS relation, pg_size_pretty(pg_total_relation_size(C.oid))
+        FROM pg_class C LEFT JOIN pg_namespace N ON (N.oid = C.relnamespace)
+        WHERE nspname NOT IN ('information_schema', 'pg_catalog', 'pg_toast')
+        ORDER BY pg_total_relation_size(C.oid) DESC;
+      )
+      psql_options = "--dbname #{database}"
+      result << psql_return_result(sql, psql_options)
+    end
+
+    def psql_database_relation_sizes_by_table(database)
+      result = "#{database}\n\n"
+      sql = %Q(
+        WITH
+          tables
+            AS (
+              SELECT
+                c.oid, *
+              FROM
+                pg_catalog.pg_class AS c
+                LEFT JOIN pg_catalog.pg_namespace AS n ON
+                    n.oid = c.relnamespace
+              WHERE
+                relkind = 'r'
+                AND n.nspname NOT IN ('information_schema', 'pg_catalog')
+            ),
+          toast
+            AS (
+              SELECT
+                c.oid, *
+              FROM
+                pg_catalog.pg_class AS c
+                LEFT JOIN pg_catalog.pg_namespace AS n ON
+                    n.oid = c.relnamespace
+              WHERE
+                relkind = 't'
+                AND n.nspname NOT IN ('information_schema', 'pg_catalog')
+            ),
+          indices
+            AS (
+              SELECT
+                c.oid, *
+              FROM
+                pg_catalog.pg_class AS c
+                LEFT JOIN pg_catalog.pg_namespace AS n ON
+                    n.oid = c.relnamespace
+              WHERE
+                relkind = 'i'
+                AND n.nspname NOT IN ('information_schema', 'pg_catalog')
+            )
+        SELECT
+          '#{database}' || '.' || relname AS name,
+          'table' AS type,
+          pg_size_pretty(pg_relation_size(oid)) AS size
+        FROM
+          tables
+        UNION
+          SELECT
+            '#{database}' || '.' || r.relname || '.' || t.relname AS name,
+            'toast' AS type,
+            pg_size_pretty(pg_relation_size(t.oid)) AS size
+          FROM
+            toast AS t
+            INNER JOIN tables AS r ON t.oid = r.reltoastrelid
+        UNION
+          SELECT
+            '#{database}' || '.' || r.relname || '.' || i.relname AS name,
+            'index' AS type,
+            pg_size_pretty(pg_relation_size(i.oid)) AS size
+          FROM
+            indices AS i
+            LEFT JOIN pg_catalog.pg_index AS c ON
+                i.oid = c.indexrelid
+            INNER JOIN tables AS r ON c.indrelid = r.oid
+        ORDER BY
+          size DESC;
+      )
+      psql_options = "--dbname #{database}"
+      result << psql_return_result(sql, psql_options)
     end
 
     def psql_settings
-      sql = 'SELECT * FROM pg_settings;'
-      command = %(su pe-postgres --shell /bin/bash --command "#{PUP_PATHS[:server_bin]}/psql --tuples-only --command '#{sql}'")
-      exec_return_result(command)
+      sql = %Q(SELECT * FROM pg_settings;)
+      psql_options = '--tuples-only'
+      psql_return_result(sql, psql_options)
     end
 
     def psql_stat_activity
-      sql = 'SELECT * FROM pg_stat_activity ORDER BY query_start;'
-      command = %(su pe-postgres --shell /bin/bash --command "#{PUP_PATHS[:server_bin]}/psql --command '#{sql}'")
-      exec_return_result(command)
+      sql = %Q(SELECT * FROM pg_stat_activity ORDER BY query_start;)
+      psql_return_result(sql)
     end
 
     def psql_replication_slots
-      sql = 'SELECT * FROM pg_replication_slots;'
-      command = %(su pe-postgres --shell /bin/bash --command "#{PUP_PATHS[:server_bin]}/psql --dbname pe-puppetdb --command \\"#{sql}\\"")
-      exec_return_result(command)
+      sql = %Q(SELECT * FROM pg_replication_slots;)
+      psql_options = '--dbname pe-puppetdb'
+      psql_return_result(sql, psql_options)
     end
 
     def psql_replication_status
-      sql = 'SELECT * FROM pg_stat_replication;'
-      command = %(su pe-postgres --shell /bin/bash --command "#{PUP_PATHS[:server_bin]}/psql --dbname pe-puppetdb --command \\"#{sql}\\"")
-      exec_return_result(command)
+      sql = %Q(SELECT * FROM pg_stat_replication;)
+      psql_options = '--dbname pe-puppetdb'
+      psql_return_result(sql, psql_options)
     end
 
     def psql_thundering_herd
-      sql = "SELECT date_part('month', start_time) AS month, date_part('day', start_time) \
-        AS day, date_part('hour', start_time) AS hour, date_part('minute', start_time) as minute, count(*) \
-        FROM reports \
-        WHERE start_time BETWEEN now() - interval '7 days' AND now() \
-        GROUP BY date_part('month', start_time), date_part('day', start_time), date_part('hour', start_time), date_part('minute', start_time) \
-        ORDER BY date_part('month', start_time) DESC, date_part('day', start_time) DESC, date_part( 'hour', start_time ) DESC, date_part('minute', start_time) DESC;"
-      command = %(su pe-postgres --shell /bin/bash --command "#{PUP_PATHS[:server_bin]}/psql --dbname pe-puppetdb --command \\"#{sql}\\"")
-      exec_return_result(command)
+      sql = %Q(
+        SELECT date_part('month', start_time) AS month,
+        date_part('day', start_time) AS day,
+        date_part('hour', start_time) AS hour,
+        date_part('minute', start_time) as minute, count(*)
+        FROM reports
+        WHERE start_time BETWEEN now() - interval '7 days' AND now()
+        GROUP BY date_part('month', start_time), date_part('day', start_time), date_part('hour', start_time), date_part('minute', start_time)
+        ORDER BY date_part('month', start_time) DESC, date_part('day', start_time) DESC, date_part( 'hour', start_time ) DESC, date_part('minute', start_time) DESC;
+      )
+      psql_options = '--dbname pe-puppetdb'
+      psql_return_result(sql, psql_options)
     end
   end
 
