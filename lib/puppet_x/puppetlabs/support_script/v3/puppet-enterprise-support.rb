@@ -1106,9 +1106,8 @@ EOS
     # @return [true] If directory creation is successful.
     # @return [false] If directory creation fails.
     def create_path(path)
-      return true if noop?
       return true if File.directory?(path)
-      exec_return_status("mkdir --parents '#{path}'")
+      FileUtils.mkdir_p(path, :noop => noop?)
     end
   end
 
@@ -1428,7 +1427,7 @@ EOS
 
     def run
       output_directory = File.join(state[:drop_directory], 'system')
-      FileUtils.mkdir_p(output_directory) unless noop?
+      FileUtils.mkdir_p(output_directory, :noop => noop?)
 
       exec_drop('lsb_release -a',       output_directory, 'lsb_release.txt')
       exec_drop('sestatus',             output_directory, 'selinux.txt')
@@ -1440,7 +1439,7 @@ EOS
       end
 
       output_directory = File.join(state[:drop_directory], 'networking')
-      FileUtils.mkdir_p(output_directory) unless noop?
+      FileUtils.mkdir_p(output_directory, :noop => noop?)
 
       data_drop(Facter.value('fqdn'), output_directory, 'hostname_output.txt')
       exec_drop('ifconfig -a',        output_directory, 'ifconfig.txt')
@@ -1451,15 +1450,13 @@ EOS
         exec_drop('lsmod | grep ip', output_directory, 'ip_modules.txt')
       end
 
-      unless noop?
-        # Create symlinks for compatibility with SOScleaner
-        #   https://github.com/RedHatGov/soscleaner
-        FileUtils.mkdir(File.join(state[:drop_directory], 'etc'))
-        FileUtils.ln_s('networking/hostname_output.txt',
-                       File.join(state[:drop_directory], 'hostname'))
-        FileUtils.ln_s('../system/etc/hosts',
-                       File.join(state[:drop_directory], 'etc/hosts'))
-      end
+      # Create symlinks for compatibility with SOScleaner
+      #   https://github.com/RedHatGov/soscleaner
+      FileUtils.mkdir(File.join(state[:drop_directory], 'etc'), :noop => noop?)
+      FileUtils.ln_s('networking/hostname_output.txt',
+                      File.join(state[:drop_directory], 'hostname'), :noop => noop?)
+      FileUtils.ln_s('../system/etc/hosts',
+                      File.join(state[:drop_directory], 'etc/hosts'), :noop => noop?)
     end
   end
 
@@ -1472,7 +1469,7 @@ EOS
   class Check::SystemLogs < Check
     def run
       output_directory = File.join(state[:drop_directory], 'logs')
-      FileUtils.mkdir_p(output_directory) unless noop?
+      FileUtils.mkdir_p(output_directory, :noop => noop?)
 
       compress_drop('/var/log/messages', output_directory, { 'recreate_parent_path' => false })
       compress_drop('/var/log/syslog', output_directory, { 'recreate_parent_path' => false })
@@ -1506,7 +1503,7 @@ EOS
   class Check::SystemStatus < Check
     def run
       output_directory = File.join(state[:drop_directory], 'system')
-      FileUtils.mkdir_p(output_directory) unless noop?
+      FileUtils.mkdir_p(output_directory, :noop => noop?)
 
       exec_drop('env',                  output_directory, 'env.txt')
       exec_drop('ps -aux',              output_directory, 'ps_aux.txt')
@@ -1517,7 +1514,7 @@ EOS
       exec_drop('uptime',               output_directory, 'uptime.txt')
 
       output_directory = File.join(state[:drop_directory], 'networking')
-      FileUtils.mkdir_p(output_directory) unless noop?
+      FileUtils.mkdir_p(output_directory, :noop => noop?)
 
       exec_drop('netstat -anptu',     output_directory, 'ports.txt')
       exec_drop('ntpq -p',            output_directory, 'ntpq_output.txt')
@@ -1533,7 +1530,7 @@ EOS
       end
 
       output_directory = File.join(state[:drop_directory], 'resources')
-      FileUtils.mkdir_p(output_directory) unless noop?
+      FileUtils.mkdir_p(output_directory, :noop => noop?)
 
       exec_drop('df -h',   output_directory, 'df_output.txt')
       exec_drop('df -i',   output_directory, 'df_output.txt')
@@ -2728,7 +2725,7 @@ EOS
               {drop_directory: drop_directory})
 
       begin
-        FileUtils.mkdir_p(drop_directory, mode: 0700) unless noop?
+        FileUtils.mkdir_p(drop_directory, :mode => 0700, :noop => noop?)
 
         # Store drop directory in state to make it available to other methods.
         state[:drop_directory] = drop_directory
@@ -2818,7 +2815,7 @@ EOS
 
       return encrypted_archive if noop?
 
-      FileUtils.mkdir(gpg_homedir, mode: 0700)
+      FileUtils.mkdir(gpg_homedir, :mode => 0700)
       exec_or_fail(%(echo '#{PGP_KEY}' | '#{state[:gpg_command]}' --quiet --import --homedir '#{gpg_homedir}'))
       exec_or_fail(%(#{state[:gpg_command]} --quiet --homedir "#{gpg_homedir}" --trust-model always --recipient #{PGP_RECIPIENT} --encrypt "#{output_archive}"))
       FileUtils.safe_unlink(output_archive)
