@@ -1046,6 +1046,8 @@ EOS
     #   directories of files in `src` underneath `dst`. Defaults to `true`.
     # @option options cwd [String, nil] Change to the directory given by `cwd`
     #   before copying `src`s as relative paths.
+    # @option options age [Integer] Specifies maximum age, in days, to filter list
+    #   of copied files.
     #
     # @return [true] If the copy command succeeds.
     # @return [false] If the copy command exits with an error,
@@ -1053,7 +1055,8 @@ EOS
     def copy_drop(src, dst, options = {})
       default_options = {
         'recreate_parent_path' => true,
-        'cwd' => nil
+        'cwd' => nil,
+        'age' => nil
       }
       options = default_options.merge(options)
 
@@ -1079,61 +1082,17 @@ EOS
       end
 
       parents_option = options['recreate_parent_path'] ? ' --parents' : ''
-      recursive_option = File.directory?(src) ? ' --recursive' : ''
       # NOTE: Facter's execution expands the path of the first command,
       #       which breaks `cd`. See FACT-2054.
       cd_option = options['cwd'].nil? ? '' : "true && cd '#{options['cwd']}' && "
-      command_line = %(#{cd_option}cp --dereference --preserve #{parents_option} #{recursive_option} '#{src}' '#{dst}')
 
-      return false unless create_path(dst)
-
-      exec_return_status(command_line)
-    end
-
-    # Copy files newer than a specified age to a destination directory
-    #
-    # @param src [String] Source directory for output.
-    # @param dst [String] Destination directory for output.
-    # @param age [Integer] Specifies maximum age, in days, to filter list
-    #   of copied files.
-    # @param options [Hash] (see #copy_drop)
-    #
-    # @return (see #copy_drop)
-    def copy_drop_mtime(src, dst, age, options = {})
-      default_options = {
-        'recreate_parent_path' => true,
-        'cwd' => nil
-      }
-      options = default_options.merge(options)
-
-      log.debug('copy_drop_mtime: copying files newer than %{age} days from: %{src} to: %{dst} with options: %{options}' %
-                {age: age,
-                 src: src,
-                 dst: dst,
-                 options: options})
-
-      expanded_path = File.join(options['cwd'].to_s, src)
-      unless File.readable?(expanded_path)
-        log.debug('copy_drop_mtime: source not readable: %{src}' %
-                  {src: expanded_path})
-        return false
-      end
-
-      if noop?
-        display(' (noop) Copying: %{src}' %
-                {src: expanded_path})
-        return
+      if options['age'].nil?
+        recursive_option = File.directory?(src) ? ' --recursive' : ''
+        command_line = %(#{cd_option}cp --dereference --preserve #{parents_option} #{recursive_option} '#{src}' '#{dst}')
       else
-        display(' ** Copying: %{src}' %
-                {src: expanded_path})
+        age_filter = (options['age'].is_a?(Integer) && (options['age'] > 0)) ? " -mtime -#{options['age']}" : ''
+        command_line = %(#{cd_option}find '#{src}' -type f #{age_filter} -exec cp --dereference --preserve #{parents_option} --target-directory '#{dst}' {} +)
       end
-
-      parents_option = options['recreate_parent_path'] ? ' --parents' : ''
-      # NOTE: Facter's execution expands the path of the first command,
-      #       which breaks `cd`. See FACT-2054.
-      cd_option = options['cwd'].nil? ? '' : "true && cd '#{options['cwd']}' && "
-      age_filter = (age.is_a?(Integer) && (age > 0)) ? " -mtime -#{age}" : ''
-      command_line = %(#{cd_option}find '#{src}' -type f #{age_filter} -exec cp --preserve #{parents_option} --target-directory '#{dst}' {} +)
 
       return false unless create_path(dst)
 
@@ -1515,9 +1474,9 @@ EOS
       output_directory = File.join(state[:drop_directory], 'logs')
       FileUtils.mkdir_p(output_directory) unless noop?
 
-      compress_drop('/var/log/messages', output_directory, { 'recreate_parent_path' => false } )
-      compress_drop('/var/log/syslog', output_directory, { 'recreate_parent_path' => false } )
-      compress_drop('/var/log/system', output_directory, { 'recreate_parent_path' => false } )
+      compress_drop('/var/log/messages', output_directory, { 'recreate_parent_path' => false })
+      compress_drop('/var/log/syslog', output_directory, { 'recreate_parent_path' => false })
+      compress_drop('/var/log/system', output_directory, { 'recreate_parent_path' => false })
 
       if documented_option?('dmesg', '--ctime')
         if documented_option?('dmesg', '--time-format')
@@ -1644,7 +1603,7 @@ EOS
 
       @files.each do |batch|
         batch[:copy].each do |src|
-          copy_drop_mtime(src, batch[:to], batch[:max_age], { 'cwd' => batch[:from] } )
+          copy_drop(src, batch[:to], { 'age' => batch[:max_age], 'cwd' => batch[:from] })
         end
       end
     end
@@ -1857,7 +1816,7 @@ EOS
         output_dir = File.join(state[:drop_directory], 'enterprise', 'state')
 
         ['classes.txt', 'graphs/', 'last_run_summary.yaml', 'resources.txt'].each do |file|
-          copy_drop_mtime(file, output_dir, -1, { 'cwd' => statedir } )
+          copy_drop(file, output_dir, { 'age' => -1, 'cwd' => statedir })
         end
       end
 
