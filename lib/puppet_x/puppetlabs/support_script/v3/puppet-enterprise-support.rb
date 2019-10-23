@@ -959,6 +959,7 @@ EOS
       end
 
       return false unless create_path(dst)
+
       exec_return_status(command_line, options['timeout'])
     end
 
@@ -985,6 +986,7 @@ EOS
       end
 
       return false unless create_path(dst)
+
       File.open(dst_file_path, 'a') { |file| file.puts(data) }
       true
     end
@@ -1102,12 +1104,21 @@ EOS
     # Recursively create a directory
     #
     # @param path [String] Path to the directory to create.
+    # @param options [Hash] A Hash of FileUtils.mkdir_p options.
     #
-    # @return [true] If directory creation is successful.
+    # @return [true] If directory exists or creation is successful.
     # @return [false] If directory creation fails.
-    def create_path(path)
-      return true if File.directory?(path)
-      FileUtils.mkdir_p(path, :noop => noop?)
+    def create_path(path, options = {})
+      default_options = { :noop => noop? }
+      options = default_options.merge(options)
+      FileUtils.mkdir_p(path, options)
+      true
+    rescue => e
+      log.error("%{exception_class} raised when creating directory: %{message}\n\t%{backtrace}" %
+                {exception_class: e.class,
+                 message: e.message,
+                 backtrace: e.backtrace.join("\n\t")})
+      false
     end
   end
 
@@ -1427,7 +1438,7 @@ EOS
 
     def run
       output_directory = File.join(state[:drop_directory], 'system')
-      FileUtils.mkdir_p(output_directory, :noop => noop?)
+      return false unless create_path(output_directory)
 
       exec_drop('lsb_release -a',       output_directory, 'lsb_release.txt')
       exec_drop('sestatus',             output_directory, 'selinux.txt')
@@ -1439,7 +1450,7 @@ EOS
       end
 
       output_directory = File.join(state[:drop_directory], 'networking')
-      FileUtils.mkdir_p(output_directory, :noop => noop?)
+      return false unless create_path(output_directory)
 
       data_drop(Facter.value('fqdn'), output_directory, 'hostname_output.txt')
       exec_drop('ifconfig -a',        output_directory, 'ifconfig.txt')
@@ -1469,7 +1480,7 @@ EOS
   class Check::SystemLogs < Check
     def run
       output_directory = File.join(state[:drop_directory], 'logs')
-      FileUtils.mkdir_p(output_directory, :noop => noop?)
+      return false unless create_path(output_directory)
 
       compress_drop('/var/log/messages', output_directory, { 'recreate_parent_path' => false })
       compress_drop('/var/log/syslog', output_directory, { 'recreate_parent_path' => false })
@@ -1503,7 +1514,7 @@ EOS
   class Check::SystemStatus < Check
     def run
       output_directory = File.join(state[:drop_directory], 'system')
-      FileUtils.mkdir_p(output_directory, :noop => noop?)
+      return false unless create_path(output_directory)
 
       exec_drop('env',                  output_directory, 'env.txt')
       exec_drop('ps -aux',              output_directory, 'ps_aux.txt')
@@ -1514,7 +1525,7 @@ EOS
       exec_drop('uptime',               output_directory, 'uptime.txt')
 
       output_directory = File.join(state[:drop_directory], 'networking')
-      FileUtils.mkdir_p(output_directory, :noop => noop?)
+      return false unless create_path(output_directory)
 
       exec_drop('netstat -anptu',     output_directory, 'ports.txt')
       exec_drop('ntpq -p',            output_directory, 'ntpq_output.txt')
@@ -1530,7 +1541,7 @@ EOS
       end
 
       output_directory = File.join(state[:drop_directory], 'resources')
-      FileUtils.mkdir_p(output_directory, :noop => noop?)
+      return false unless create_path(output_directory)
 
       exec_drop('df -h',   output_directory, 'df_output.txt')
       exec_drop('df -i',   output_directory, 'df_output.txt')
@@ -1670,7 +1681,7 @@ EOS
 
         @services.each do |service|
           log_directory = File.join(state[:drop_directory], 'logs', service.sub('pe-', ''))
-          create_path(log_directory)
+          next unless create_path(log_directory)
 
           exec_drop("journalctl --full --output=short-iso --unit='#{service}.service' #{age_filter}", log_directory, "#{service}-journalctl.log")
         end
@@ -1709,7 +1720,7 @@ EOS
 
     def run
       output_directory = File.join(state[:drop_directory], 'system')
-      create_path(output_directory)
+      return false unless create_path(output_directory)
 
       if (! noop?) && executable?('systemctl')
         @services.each do |service|
@@ -1758,7 +1769,7 @@ EOS
           next if @service_pids[service].nil?
 
           proc_directory = File.join(output_directory, 'proc', service)
-          create_path(proc_directory)
+          return false unless create_path(proc_directory)
 
           ['cmdline','limits','environ'].each do |procfile|
             copy_drop("/proc/#{@service_pids[service]}/#{procfile}", proc_directory, { 'recreate_parent_path' => false })
@@ -2724,21 +2735,11 @@ EOS
       display('Creating output directory: %{drop_directory}' %
               {drop_directory: drop_directory})
 
-      begin
-        FileUtils.mkdir_p(drop_directory, :mode => 0700, :noop => noop?)
+      return false unless create_path(drop_directory, :mode => 0700)
 
-        # Store drop directory in state to make it available to other methods.
-        state[:drop_directory] = drop_directory
-      rescue => e
-        log.error("%{exception_class} raised when creating output directory: %{message}\n\t%{backtrace}" %
-                  {exception_class: e.class,
-                   message: e.message,
-                   backtrace: e.backtrace.join("\n\t")})
-
-        return false
-      end
-
-      return true
+      # Store drop directory in state to make it available to other methods.
+      state[:drop_directory] = drop_directory
+      true
     end
 
     def cleanup_output_directory
