@@ -69,7 +69,7 @@ printf 'Reading latest good build from: %s\n' "${build_url}"
 LATEST_GOOD_BUILD=$(curl -Ss "${build_url}")
 printf "Testing build: %s\n" "${LATEST_GOOD_BUILD?}"
 
-export BEAKER_PE_DIR="http://enterprise.delivery.puppetlabs.net/${PE_TEST_SERIES}/ci-ready/"
+export BEAKER_PE_DIR="https://artifactory.delivery.puppetlabs.net/artifactory/generic_enterprise__local/${PE_TEST_SERIES}/ci-ready/"
 export BEAKER_PE_VER="${LATEST_GOOD_BUILD}"
 
 execute_beaker() {
