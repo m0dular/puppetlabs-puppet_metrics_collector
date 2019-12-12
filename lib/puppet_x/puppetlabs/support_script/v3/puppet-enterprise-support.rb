@@ -837,14 +837,17 @@ EOS
       return state[:platform_packaging] if state.key?(:platform_packaging)
 
       os = Facter.value('os')
-      pkg_manager = case os['name'].downcase
-                    when 'amazon', 'aix', 'centos', 'eos', 'fedora', 'redhat', 'rhel', 'sles'
+      pkg_manager = case os['family'].downcase
+                    when 'redhat', 'suse'
                       'rpm'
-                    when 'debian', 'cumulus', 'ubuntu'
+                    when 'debian'
                       'dpkg'
                     else
-                      log.error('Unknown packaging system for platform: %{os_name}' %
-                                {os_name: os['name'].downcase})
+                      log.error('Unknown packaging system for operating system "%{os_name}" and famliy "%{os_family}"' %
+                                {os_name: os['name'],
+                                 os_family: os['family']})
+                      # Mark run as failed.
+                      state[:exit_code] = 1
                       nil
                     end
 
