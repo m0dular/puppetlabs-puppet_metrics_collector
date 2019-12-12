@@ -282,7 +282,7 @@ EOS
                    #       that default to disabled.
                    classifier: false,
                    filesync: false}
-      @state = {}
+      @state = {exit_code: 0}
     end
 
     # Update configuration of the settings object
@@ -2533,7 +2533,7 @@ EOS
         if settings[:list]
           children.each(&:describe)
 
-          return 0
+          return state[:exit_code]
         end
 
         setup_output_directory or return 1
@@ -2561,7 +2561,7 @@ EOS
         cleanup_output_directory
       end
 
-      return 0
+      return state[:exit_code]
     end
 
     private
