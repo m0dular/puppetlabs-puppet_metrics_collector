@@ -24,7 +24,7 @@ describe PuppetX::Puppetlabs::SupportScript::Check::GatherFiles do
                                                   to: test_dir}])
 
         ['bar', 'baz', 'subdir/bim', 'subdir/bop'].each do |file|
-          expect(test_check).to receive(:copy_drop_mtime).with(file, any_args)
+          expect(test_check).to receive(:copy_drop).with(file, any_args)
         end
 
         test_check.run
@@ -50,7 +50,7 @@ describe PuppetX::Puppetlabs::SupportScript::Check::GatherFiles do
         allow(test_check).to receive(:exec_return_result).with(/find 'baz'/).and_return("2048")
 
         expect(script_logger).to receive(:error).with(/Not enough free disk space/)
-        expect(test_check).to receive(:copy_drop_mtime).never
+        expect(test_check).to receive(:copy_drop).never
 
         test_check.run
       end

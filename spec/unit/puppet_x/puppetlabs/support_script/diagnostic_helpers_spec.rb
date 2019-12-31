@@ -76,16 +76,4 @@ describe PuppetX::Puppetlabs::SupportScript::DiagnosticHelpers do
       expect(result).to be(false)
     end
   end
-
-  describe '#copy_drop_mtime' do
-    it 'logs a message and returns false if the source file is not readable' do
-      allow(script_logger).to receive(:debug)
-      expect(script_logger).to \
-        receive(:debug).with(%r{source not readable: /does/not/exist})
-
-      result = subject.copy_drop_mtime('/does/not/exist', '/tmp', 14)
-
-      expect(result).to be(false)
-    end
-  end
 end
