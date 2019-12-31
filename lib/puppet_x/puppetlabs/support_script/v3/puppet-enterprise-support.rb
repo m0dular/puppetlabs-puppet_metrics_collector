@@ -915,21 +915,28 @@ EOS
     # @param command_line [String] Command line to execute.
     # @param dst [String] Destination directory for output.
     # @param file [String] File under `dst` where output should be appended.
-    # @param timeout [Integer] Optional number of seconds to allow for
+    # @param options [Hash] A Hash of options.
+    # @option options timeout [Integer] Optional number of seconds to allow for
     #   command execution. Defaults to 0 which disables the timeout.
-    # @param stderr [String, nil] An optional additional file to send
+    # @option options stderr [String, nil] An optional additional file to send
     #   stderr to. Stderr is merged into stdout if not provided.
     #
     # @return [true] If the command completes successfully.
-    # @return [false] If the command cannot be found, exits with a non-zero
-    #   code, or there is an error creating the output path.
-    def exec_drop(command_line, dst, file, timeout = 0, stderr: nil)
+    # @return [false] If the command cannot be found, exits with a non-zero code,
+    #   or there is an error creating the output path.
+    def exec_drop(command_line, dst, file, options = {})
+      default_options = {
+        'timeout' => 0,
+        'stderr' => nil
+      }
+      options = default_options.merge(options)
+
       command = command_line.split(' ')[0]
       dst_file_path = File.join(dst, file)
-      if stderr.nil?
+      if options['stderr'].nil?
         stderr_dst = '2>&1'
       else
-        stderr_dst = "2>> '#{File.join(dst, stderr)}'"
+        stderr_dst = "2>> '#{File.join(dst, options['stderr'])}'"
       end
       command_line = %(#{command_line} #{stderr_dst} >> '#{dst_file_path}')
       unless executable?(command)
@@ -952,7 +959,8 @@ EOS
       end
 
       return false unless create_path(dst)
-      exec_return_status(command_line, timeout)
+
+      exec_return_status(command_line, options['timeout'])
     end
 
     # Append data to an output file
@@ -978,28 +986,88 @@ EOS
       end
 
       return false unless create_path(dst)
+
       File.open(dst_file_path, 'a') { |file| file.puts(data) }
       true
+    end
+
+    # Compress file to a destination directory
+    #
+    # @param src [String] File to output.
+    # @param dst [String] Destination directory for output.
+    # @param options [Hash] A Hash of options.
+    # @option options recreate_parent_path [Boolean] Whether to re-create parent
+    #   directories of the `src` underneath `dst`. Defaults to `true`.
+    #
+    # @return [true] If the compress command succeeds.
+    # @return [false] If the compress command exits with an error,
+    #   or if there is an error creating the output path.
+    def compress_drop(src, dst, options = {})
+      default_options = { 'recreate_parent_path' => true }
+      options = default_options.merge(options)
+
+      log.debug('compress_drop: compressing: %{src} to: %{dst} with options: %{options}' %
+                {src: src,
+                 dst: dst,
+                 options: options})
+
+      unless File.readable?(src)
+        log.debug('compress_drop: source not readable: %{src}' %
+                  {src: src})
+        return false
+      end
+
+      if noop?
+        display(' (noop) Compressing: %{src}' %
+                {src: src})
+        return
+      else
+        display(' ** Compressing: %{src}' %
+                {src: src})
+      end
+
+      if options['recreate_parent_path']
+        dst_file = File.join(dst, "#{src}.gz")
+        dst = File.dirname(dst_file)
+      else
+        dst_file = File.join(dst, "#{File.basename(src)}.gz")
+      end
+      command_line = %(gzip -c '#{src}' > '#{dst_file}' && touch -c -r '#{src}' '#{dst_file}')
+
+      return false unless create_path(dst)
+
+      exec_return_status(command_line)
     end
 
     # Copy directories or files to a destination directory
     #
     # @param src [String] Source directory for output.
     # @param dst [String] Destination directory for output.
-    # @param recreate_parent_path [Boolean] Whether to re-create parent
+    # @param options [Hash] A Hash of options.
+    # @option options recreate_parent_path [Boolean] Whether to re-create parent
     #   directories of files in `src` underneath `dst`. Defaults to `true`.
-    # @param cwd [String, nil] Change to the directory given by `cwd` before
-    #   copying srcs as relative paths.
+    # @option options cwd [String, nil] Change to the directory given by `cwd`
+    #   before copying `src`s as relative paths.
+    # @option options age [Integer] Specifies maximum age, in days, to filter list
+    #   of copied files.
     #
-    # @return [true] If file copying suceeds.
-    # @return [false] If the copy command exits wiht an error or if
-    #   there is an error creating the output path.
-    def copy_drop(src, dst, recreate_parent_path = true, cwd = nil)
-      log.debug('copy_drop: copying: %{src} to: %{dst}' %
-                {src: src,
-                 dst: dst})
+    # @return [true] If the copy command succeeds.
+    # @return [false] If the copy command exits with an error,
+    #   or if there is an error creating the output path.
+    def copy_drop(src, dst, options = {})
+      default_options = {
+        'recreate_parent_path' => true,
+        'cwd' => nil,
+        'age' => nil
+      }
+      options = default_options.merge(options)
 
-      expanded_path = File.join(cwd.to_s, src)
+      log.debug('copy_drop: copying: %{src} to: %{dst} with options: %{options}' %
+                {src: src,
+                 dst: dst,
+                 options: options})
+
+      expanded_path = File.join(options['cwd'].to_s, src)
       unless File.readable?(expanded_path)
         log.debug('copy_drop: source not readable: %{src}' %
                   {src: expanded_path})
@@ -1015,58 +1083,18 @@ EOS
                 {src: expanded_path})
       end
 
-      parents_option = recreate_parent_path ? ' --parents' : ''
-      recursive_option = File.directory?(src) ? ' --recursive' : ''
+      parents_option = options['recreate_parent_path'] ? ' --parents' : ''
       # NOTE: Facter's execution expands the path of the first command,
       #       which breaks `cd`. See FACT-2054.
-      cd_option = cwd.nil? ? '' : "true && cd '#{cwd}' && "
-      command_line = %(#{cd_option}cp --dereference --preserve #{parents_option} #{recursive_option} '#{src}' '#{dst}')
+      cd_option = options['cwd'].nil? ? '' : "true && cd '#{options['cwd']}' && "
 
-      return false unless create_path(dst)
-
-      exec_return_status(command_line)
-    end
-
-    # Copy files newer than a specified age to a destination directory
-    #
-    # @param src [String] Source directory for output.
-    # @param dst [String] Destination directory for output.
-    # @param age [Integer] Specifies maximum age, in days, to filter list
-    #   of copied files.
-    # @param recreate_parent_path [Boolean] Whether to re-create parent
-    #   directories of files in `src` underneath `dst`. Defaults to `true`.
-    # @param cwd [String, nil] Change to the directory given by `cwd` before
-    #   copying srcs as relative paths.
-    #
-    # @return (see #copy_drop)
-    def copy_drop_mtime(src, dst, age, recreate_parent_path = true, cwd = nil)
-      log.debug('copy_drop_mtime: copying files newer than %{age} days from: %{src} to: %{dst}' %
-                {age: age,
-                 src: src,
-                 dst: dst})
-
-      expanded_path = File.join(cwd.to_s, src)
-      unless File.readable?(expanded_path)
-        log.debug('copy_drop_mtime: source not readable: %{src}' %
-                  {src: expanded_path})
-        return false
-      end
-
-      if noop?
-        display(' (noop) Copying: %{src}' %
-                {src: expanded_path})
-        return
+      if options['age'].nil?
+        recursive_option = File.directory?(src) ? ' --recursive' : ''
+        command_line = %(#{cd_option}cp --dereference --preserve #{parents_option} #{recursive_option} '#{src}' '#{dst}')
       else
-        display(' ** Copying: %{src}' %
-                {src: expanded_path})
+        age_filter = (options['age'].is_a?(Integer) && (options['age'] > 0)) ? " -mtime -#{options['age']}" : ''
+        command_line = %(#{cd_option}find '#{src}' -type f #{age_filter} -exec cp --dereference --preserve #{parents_option} --target-directory '#{dst}' {} +)
       end
-
-      parents_option = recreate_parent_path ? ' --parents' : ''
-      # NOTE: Facter's execution expands the path of the first command,
-      #       which breaks `cd`. See FACT-2054.
-      cd_option = cwd.nil? ? '' : "true && cd '#{cwd}' && "
-      age_filter = (age.is_a?(Integer) && (age > 0)) ? " -mtime -#{age}" : ''
-      command_line = %(#{cd_option}find '#{src}' -type f #{age_filter} -exec cp --preserve #{parents_option} --target-directory '#{dst}' {} +)
 
       return false unless create_path(dst)
 
@@ -1076,13 +1104,21 @@ EOS
     # Recursively create a directory
     #
     # @param path [String] Path to the directory to create.
+    # @param options [Hash] A Hash of FileUtils.mkdir_p options.
     #
-    # @return [true] If directory creation is successful.
+    # @return [true] If directory exists or creation is successful.
     # @return [false] If directory creation fails.
-    def create_path(path)
-      return true if noop?
-      return true if File.directory?(path)
-      exec_return_status("mkdir --parents '#{path}'")
+    def create_path(path, options = {})
+      default_options = { :noop => noop? }
+      options = default_options.merge(options)
+      FileUtils.mkdir_p(path, **options)
+      true
+    rescue => e
+      log.error("%{exception_class} raised when creating directory: %{message}\n\t%{backtrace}" %
+                {exception_class: e.class,
+                 message: e.message,
+                 backtrace: e.backtrace.join("\n\t")})
+      false
     end
   end
 
@@ -1402,7 +1438,7 @@ EOS
 
     def run
       output_directory = File.join(state[:drop_directory], 'system')
-      FileUtils.mkdir_p(output_directory) unless noop?
+      return false unless create_path(output_directory)
 
       exec_drop('lsb_release -a',       output_directory, 'lsb_release.txt')
       exec_drop('sestatus',             output_directory, 'selinux.txt')
@@ -1414,7 +1450,7 @@ EOS
       end
 
       output_directory = File.join(state[:drop_directory], 'networking')
-      FileUtils.mkdir_p(output_directory) unless noop?
+      return false unless create_path(output_directory)
 
       data_drop(Facter.value('fqdn'), output_directory, 'hostname_output.txt')
       exec_drop('ifconfig -a',        output_directory, 'ifconfig.txt')
@@ -1425,15 +1461,13 @@ EOS
         exec_drop('lsmod | grep ip', output_directory, 'ip_modules.txt')
       end
 
-      unless noop?
-        # Create symlinks for compatibility with SOScleaner
-        #   https://github.com/RedHatGov/soscleaner
-        FileUtils.mkdir(File.join(state[:drop_directory], 'etc'))
-        FileUtils.ln_s('networking/hostname_output.txt',
-                       File.join(state[:drop_directory], 'hostname'))
-        FileUtils.ln_s('../system/etc/hosts',
-                       File.join(state[:drop_directory], 'etc/hosts'))
-      end
+      # Create symlinks for compatibility with SOScleaner
+      #   https://github.com/RedHatGov/soscleaner
+      FileUtils.mkdir(File.join(state[:drop_directory], 'etc'), :noop => noop?)
+      FileUtils.ln_s('networking/hostname_output.txt',
+                      File.join(state[:drop_directory], 'hostname'), :noop => noop?)
+      FileUtils.ln_s('../system/etc/hosts',
+                      File.join(state[:drop_directory], 'etc/hosts'), :noop => noop?)
     end
   end
 
@@ -1446,12 +1480,11 @@ EOS
   class Check::SystemLogs < Check
     def run
       output_directory = File.join(state[:drop_directory], 'logs')
-      FileUtils.mkdir_p(output_directory) unless noop?
+      return false unless create_path(output_directory)
 
-      # FIXME: These should be gzipped as they can be quite large.
-      copy_drop('/var/log/messages', output_directory, false)
-      copy_drop('/var/log/syslog', output_directory, false)
-      copy_drop('/var/log/system', output_directory, false)
+      compress_drop('/var/log/messages', output_directory, { 'recreate_parent_path' => false })
+      compress_drop('/var/log/syslog', output_directory, { 'recreate_parent_path' => false })
+      compress_drop('/var/log/system', output_directory, { 'recreate_parent_path' => false })
 
       if documented_option?('dmesg', '--ctime')
         if documented_option?('dmesg', '--time-format')
@@ -1481,7 +1514,7 @@ EOS
   class Check::SystemStatus < Check
     def run
       output_directory = File.join(state[:drop_directory], 'system')
-      FileUtils.mkdir_p(output_directory) unless noop?
+      return false unless create_path(output_directory)
 
       exec_drop('env',                  output_directory, 'env.txt')
       exec_drop('ps -aux',              output_directory, 'ps_aux.txt')
@@ -1492,7 +1525,7 @@ EOS
       exec_drop('uptime',               output_directory, 'uptime.txt')
 
       output_directory = File.join(state[:drop_directory], 'networking')
-      FileUtils.mkdir_p(output_directory) unless noop?
+      return false unless create_path(output_directory)
 
       exec_drop('netstat -anptu',     output_directory, 'ports.txt')
       exec_drop('ntpq -p',            output_directory, 'ntpq_output.txt')
@@ -1508,7 +1541,7 @@ EOS
       end
 
       output_directory = File.join(state[:drop_directory], 'resources')
-      FileUtils.mkdir_p(output_directory) unless noop?
+      return false unless create_path(output_directory)
 
       exec_drop('df -h',   output_directory, 'df_output.txt')
       exec_drop('df -i',   output_directory, 'df_output.txt')
@@ -1578,7 +1611,7 @@ EOS
 
       @files.each do |batch|
         batch[:copy].each do |src|
-          copy_drop_mtime(src, batch[:to], batch[:max_age], true, batch[:from])
+          copy_drop(src, batch[:to], { 'age' => batch[:max_age], 'cwd' => batch[:from] })
         end
       end
     end
@@ -1648,7 +1681,7 @@ EOS
 
         @services.each do |service|
           log_directory = File.join(state[:drop_directory], 'logs', service.sub('pe-', ''))
-          create_path(log_directory)
+          next unless create_path(log_directory)
 
           exec_drop("journalctl --full --output=short-iso --unit='#{service}.service' #{age_filter}", log_directory, "#{service}-journalctl.log")
         end
@@ -1687,7 +1720,7 @@ EOS
 
     def run
       output_directory = File.join(state[:drop_directory], 'system')
-      create_path(output_directory)
+      return false unless create_path(output_directory)
 
       if (! noop?) && executable?('systemctl')
         @services.each do |service|
@@ -1736,10 +1769,10 @@ EOS
           next if @service_pids[service].nil?
 
           proc_directory = File.join(output_directory, 'proc', service)
-          create_path(proc_directory)
+          return false unless create_path(proc_directory)
 
           ['cmdline','limits','environ'].each do |procfile|
-            copy_drop("/proc/#{@service_pids[service]}/#{procfile}", proc_directory, false)
+            copy_drop("/proc/#{@service_pids[service]}/#{procfile}", proc_directory, { 'recreate_parent_path' => false })
           end
           data_drop(File.readlink("/proc/#{@service_pids[service]}/exe"), proc_directory, 'exe')
           FileUtils.chmod_R('u+wX', proc_directory)
@@ -1747,7 +1780,7 @@ EOS
           if executable?('systemctl')
             # Grab CGroup settings for the service.
             ['memory','cpu','blkio','devices','pids','systemd'].each do |fs|
-              copy_drop("/sys/fs/cgroup/#{fs}/system.slice/#{service}.service/", output_directory, true)
+              copy_drop("/sys/fs/cgroup/#{fs}/system.slice/#{service}.service/", output_directory)
             end
             FileUtils.chmod_R('u+wX', "#{output_directory}/sys") if File.exist?("#{output_directory}/sys")
           end
@@ -1791,7 +1824,7 @@ EOS
         output_dir = File.join(state[:drop_directory], 'enterprise', 'state')
 
         ['classes.txt', 'graphs/', 'last_run_summary.yaml', 'resources.txt'].each do |file|
-          copy_drop_mtime(file, output_dir, -1, true, statedir)
+          copy_drop(file, output_dir, { 'age' => -1, 'cwd' => statedir })
         end
       end
 
@@ -1891,8 +1924,8 @@ EOS
         environment_directory = File.dirname(environment_manifests)
         environment_drop_directory = File.join(ent_directory, 'etc/puppetlabs/code/environments', environment)
 
-        copy_drop('environment.conf', environment_drop_directory, false, environment_directory)
-        copy_drop('hiera.yaml', environment_drop_directory, false, environment_directory)
+        copy_drop('environment.conf', environment_drop_directory, { 'recreate_parent_path' => false, 'cwd' => environment_directory })
+        copy_drop('hiera.yaml', environment_drop_directory, { 'recreate_parent_path' => false, 'cwd' => environment_directory })
       end unless puppetserver_environments.empty?
 
       r10k_config = '/opt/puppetlabs/server/data/code-manager/r10k.yaml'
@@ -2308,67 +2341,189 @@ EOS
       databases = psql_databases
       databases = databases.lines.map(&:strip).grep(%r{^pe\-}).sort
       databases.each do |database|
-        database_size_from_psql = psql_database_relation_sizes(database)
-        data_drop(database_size_from_psql, res_directory, 'db_relation_sizes.txt')
+        data_drop(psql_database_relation_sizes(database),          res_directory, 'db_relation_sizes.txt')
+        data_drop(psql_database_table_sizes(database),             res_directory, 'db_table_sizes.txt')
+        data_drop(psql_total_relation_sizes(database),             res_directory, 'db_total_relation_sizes.txt')
+        data_drop(psql_database_relation_sizes_by_table(database), res_directory, 'db_relation_sizes_by_table.txt')
       end
     end
 
-    # TODO: Create a generic psql function that can run these queries.
+    # Execute psql queries.
+    #
+    # @param sql [String] SQL to execute via a psql command.
+    # @param psql_options [String] list of options to pass to the psql command.
+    #
+    # @return (see #exec_return_result)
+
+    def psql_return_result(sql, psql_options = '')
+      command = %(su pe-postgres --shell /bin/bash --command "true && cd /tmp && #{PUP_PATHS[:server_bin]}/psql #{psql_options} --command \\"#{sql}\\"")
+      exec_return_result(command)
+    end
 
     def psql_databases
-      sql = 'SELECT datname FROM pg_catalog.pg_database;'
-      command = %(su pe-postgres --shell /bin/bash --command "#{PUP_PATHS[:server_bin]}/psql --tuples-only --command '#{sql}'")
-      exec_return_result(command)
+      sql = %Q(SELECT datname FROM pg_catalog.pg_database;)
+      psql_options = '--tuples-only'
+      psql_return_result(sql)
     end
 
     def psql_database_sizes
-      sql = 'SELECT t1.datname AS db_name, pg_size_pretty(pg_database_size(t1.datname)) FROM pg_database t1 ORDER BY pg_database_size(t1.datname) DESC;'
-      command = %(su pe-postgres --shell /bin/bash --command "#{PUP_PATHS[:server_bin]}/psql --command '#{sql}'")
-      exec_return_result(command)
+      sql = %Q(
+        SELECT t1.datname AS db_name, pg_size_pretty(pg_database_size(t1.datname))
+        FROM pg_database t1
+        ORDER BY pg_database_size(t1.datname) DESC;
+      )
+      psql_return_result(sql)
     end
+
+    # pg_relation_size: Disk space used by the specified fork ('main', 'fsm', 'vm', or 'init' ... defaults to 'main') of the specified table or index.
 
     def psql_database_relation_sizes(database)
       result = "#{database}\n\n"
-      sql = "SELECT '#{database}' AS db_name, nspname || '.' || relname AS relation, pg_size_pretty(pg_relation_size(C.oid)) \
-        FROM pg_class C LEFT JOIN pg_namespace N ON (N.oid = C.relnamespace) WHERE nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast') \
-        ORDER BY pg_relation_size(C.oid) DESC;"
-      command = %(su pe-postgres --shell /bin/bash --command "#{PUP_PATHS[:server_bin]}/psql --dbname #{database} --command \\"#{sql}\\"")
-      result << exec_return_result(command)
+      sql = %Q(
+        SELECT '#{database}' AS db_name, nspname || '.' || relname AS relation, pg_size_pretty(pg_relation_size(C.oid))
+        FROM pg_class C LEFT JOIN pg_namespace N ON (N.oid = C.relnamespace)
+        WHERE nspname NOT IN ('information_schema', 'pg_catalog', 'pg_toast')
+        ORDER BY pg_relation_size(C.oid) DESC;
+      )
+      psql_options = "--dbname #{database}"
+      result << psql_return_result(sql, psql_options)
+    end
+
+    # pg_table_size: Disk space used by the specified table, excluding indexes but including TOAST, and all of the forks: 'main', 'fsm', 'vm', 'init'.
+
+    def psql_database_table_sizes(database)
+      result = "#{database}\n\n"
+      sql = %Q(
+        SELECT '#{database}' AS db_name, nspname || '.' || relname AS relation, pg_size_pretty(pg_table_size(C.oid))
+        FROM pg_class C LEFT JOIN pg_namespace N ON (N.oid = C.relnamespace)
+        WHERE nspname NOT IN ('information_schema', 'pg_catalog', 'pg_toast')
+        ORDER BY pg_table_size(C.oid) DESC;
+      )
+      psql_options = "--dbname #{database}"
+      result << psql_return_result(sql, psql_options)
+    end
+
+    # pg_total_relation_size: Total disk space used by the specified table, including indexes, TOAST, and all of the forks: 'main', 'fsm', 'vm', 'init'.
+
+    def psql_total_relation_sizes(database)
+      result = "#{database}\n\n"
+      sql = %Q(
+        SELECT '#{database}' AS db_name, nspname || '.' || relname AS relation, pg_size_pretty(pg_total_relation_size(C.oid))
+        FROM pg_class C LEFT JOIN pg_namespace N ON (N.oid = C.relnamespace)
+        WHERE nspname NOT IN ('information_schema', 'pg_catalog', 'pg_toast')
+        ORDER BY pg_total_relation_size(C.oid) DESC;
+      )
+      psql_options = "--dbname #{database}"
+      result << psql_return_result(sql, psql_options)
+    end
+
+    def psql_database_relation_sizes_by_table(database)
+      result = "#{database}\n\n"
+      sql = %Q(
+        WITH
+          tables
+            AS (
+              SELECT
+                c.oid, *
+              FROM
+                pg_catalog.pg_class AS c
+                LEFT JOIN pg_catalog.pg_namespace AS n ON
+                    n.oid = c.relnamespace
+              WHERE
+                relkind = 'r'
+                AND n.nspname NOT IN ('information_schema', 'pg_catalog')
+            ),
+          toast
+            AS (
+              SELECT
+                c.oid, *
+              FROM
+                pg_catalog.pg_class AS c
+                LEFT JOIN pg_catalog.pg_namespace AS n ON
+                    n.oid = c.relnamespace
+              WHERE
+                relkind = 't'
+                AND n.nspname NOT IN ('information_schema', 'pg_catalog')
+            ),
+          indices
+            AS (
+              SELECT
+                c.oid, *
+              FROM
+                pg_catalog.pg_class AS c
+                LEFT JOIN pg_catalog.pg_namespace AS n ON
+                    n.oid = c.relnamespace
+              WHERE
+                relkind = 'i'
+                AND n.nspname NOT IN ('information_schema', 'pg_catalog')
+            )
+        SELECT
+          '#{database}' || '.' || relname AS name,
+          'table' AS type,
+          pg_size_pretty(pg_relation_size(oid)) AS size
+        FROM
+          tables
+        UNION
+          SELECT
+            '#{database}' || '.' || r.relname || '.' || t.relname AS name,
+            'toast' AS type,
+            pg_size_pretty(pg_relation_size(t.oid)) AS size
+          FROM
+            toast AS t
+            INNER JOIN tables AS r ON t.oid = r.reltoastrelid
+        UNION
+          SELECT
+            '#{database}' || '.' || r.relname || '.' || i.relname AS name,
+            'index' AS type,
+            pg_size_pretty(pg_relation_size(i.oid)) AS size
+          FROM
+            indices AS i
+            LEFT JOIN pg_catalog.pg_index AS c ON
+                i.oid = c.indexrelid
+            INNER JOIN tables AS r ON c.indrelid = r.oid
+        ORDER BY
+          size DESC;
+      )
+      psql_options = "--dbname #{database}"
+      result << psql_return_result(sql, psql_options)
     end
 
     def psql_settings
-      sql = 'SELECT * FROM pg_settings;'
-      command = %(su pe-postgres --shell /bin/bash --command "#{PUP_PATHS[:server_bin]}/psql --tuples-only --command '#{sql}'")
-      exec_return_result(command)
+      sql = %Q(SELECT * FROM pg_settings;)
+      psql_options = '--tuples-only'
+      psql_return_result(sql, psql_options)
     end
 
     def psql_stat_activity
-      sql = 'SELECT * FROM pg_stat_activity ORDER BY query_start;'
-      command = %(su pe-postgres --shell /bin/bash --command "#{PUP_PATHS[:server_bin]}/psql --command '#{sql}'")
-      exec_return_result(command)
+      sql = %Q(SELECT * FROM pg_stat_activity ORDER BY query_start;)
+      psql_return_result(sql)
     end
 
     def psql_replication_slots
-      sql = 'SELECT * FROM pg_replication_slots;'
-      command = %(su pe-postgres --shell /bin/bash --command "#{PUP_PATHS[:server_bin]}/psql --dbname pe-puppetdb --command \\"#{sql}\\"")
-      exec_return_result(command)
+      sql = %Q(SELECT * FROM pg_replication_slots;)
+      psql_options = '--dbname pe-puppetdb'
+      psql_return_result(sql, psql_options)
     end
 
     def psql_replication_status
-      sql = 'SELECT * FROM pg_stat_replication;'
-      command = %(su pe-postgres --shell /bin/bash --command "#{PUP_PATHS[:server_bin]}/psql --dbname pe-puppetdb --command \\"#{sql}\\"")
-      exec_return_result(command)
+      sql = %Q(SELECT * FROM pg_stat_replication;)
+      psql_options = '--dbname pe-puppetdb'
+      psql_return_result(sql, psql_options)
     end
 
     def psql_thundering_herd
-      sql = "SELECT date_part('month', start_time) AS month, date_part('day', start_time) \
-        AS day, date_part('hour', start_time) AS hour, date_part('minute', start_time) as minute, count(*) \
-        FROM reports \
-        WHERE start_time BETWEEN now() - interval '7 days' AND now() \
-        GROUP BY date_part('month', start_time), date_part('day', start_time), date_part('hour', start_time), date_part('minute', start_time) \
-        ORDER BY date_part('month', start_time) DESC, date_part('day', start_time) DESC, date_part( 'hour', start_time ) DESC, date_part('minute', start_time) DESC;"
-      command = %(su pe-postgres --shell /bin/bash --command "#{PUP_PATHS[:server_bin]}/psql --dbname pe-puppetdb --command \\"#{sql}\\"")
-      exec_return_result(command)
+      sql = %Q(
+        SELECT date_part('month', start_time) AS month,
+        date_part('day', start_time) AS day,
+        date_part('hour', start_time) AS hour,
+        date_part('minute', start_time) as minute, count(*)
+        FROM reports
+        WHERE start_time BETWEEN now() - interval '7 days' AND now()
+        GROUP BY date_part('month', start_time), date_part('day', start_time), date_part('hour', start_time), date_part('minute', start_time)
+        ORDER BY date_part('month', start_time) DESC, date_part('day', start_time) DESC, date_part( 'hour', start_time ) DESC, date_part('minute', start_time) DESC;
+      )
+      psql_options = '--dbname pe-puppetdb'
+      psql_return_result(sql, psql_options)
     end
   end
 
@@ -2580,21 +2735,11 @@ EOS
       display('Creating output directory: %{drop_directory}' %
               {drop_directory: drop_directory})
 
-      begin
-        FileUtils.mkdir_p(drop_directory, mode: 0700) unless noop?
+      return false unless create_path(drop_directory, :mode => 0700)
 
-        # Store drop directory in state to make it available to other methods.
-        state[:drop_directory] = drop_directory
-      rescue => e
-        log.error("%{exception_class} raised when creating output directory: %{message}\n\t%{backtrace}" %
-                  {exception_class: e.class,
-                   message: e.message,
-                   backtrace: e.backtrace.join("\n\t")})
-
-        return false
-      end
-
-      return true
+      # Store drop directory in state to make it available to other methods.
+      state[:drop_directory] = drop_directory
+      true
     end
 
     def cleanup_output_directory
@@ -2671,7 +2816,7 @@ EOS
 
       return encrypted_archive if noop?
 
-      FileUtils.mkdir(gpg_homedir, mode: 0700)
+      FileUtils.mkdir(gpg_homedir, :mode => 0700)
       exec_or_fail(%(echo '#{PGP_KEY}' | '#{state[:gpg_command]}' --quiet --import --homedir '#{gpg_homedir}'))
       exec_or_fail(%(#{state[:gpg_command]} --quiet --homedir "#{gpg_homedir}" --trust-model always --recipient #{PGP_RECIPIENT} --encrypt "#{output_archive}"))
       FileUtils.safe_unlink(output_archive)

@@ -182,8 +182,8 @@ Puppet::Face.define(:enterprise, '1.0.0') do
         PuppetX::Puppetlabs::SupportScript::Settings.instance.log.add_logger(PuppetX::Puppetlabs::SupportScript::LogManager.console_logger)
         support = PuppetX::Puppetlabs::SupportScript::Runner.new
         support.add_child(PuppetX::Puppetlabs::SupportScript::Scope::Base, name: '')
-
-        return support.run
+        support.run
+        return
       else
         support_script = File.join(support_module, 'lib/puppet_x/puppetlabs/support_script/v1/puppet-enterprise-support.sh')
         Kernel.exec('/bin/bash', support_script, *support_script_parameters)
