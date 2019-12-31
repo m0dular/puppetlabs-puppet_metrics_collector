@@ -2463,6 +2463,19 @@ EOS
         end
       end
 
+      # NOTE: This is needed because Facter::Core::Execution ends up waiting
+      #       in C++ code for subprocesses to complete while holding the Ruby
+      #       Global VM Lock (GVL). Thus, any signal handler implemented in
+      #       Ruby will be unable to run until the lock is released.
+      #       Specifying SYSTEM_DEFAULT uses the libc handlers, which allows
+      #       CTRL-C and CTRL-\ to successfuly interrupt a support script that
+      #       is waiting for a subcommand to complete (See FACT-2250).
+      #
+      # TODO: Some of these signal names are not supported on Windows.
+      [:INT, :TERM, :QUIT].each do |signal|
+        Signal.trap(signal, :SYSTEM_DEFAULT)
+      end
+
       # FIXME: Replace with Scopes that are confined to Linux.
       unless /linux/i.match(Facter.value('kernel'))
         log.error('The support script is limited to Linux operating systems.')
