@@ -183,7 +183,7 @@ Puppet::Face.define(:enterprise, '1.0.0') do
         support = PuppetX::Puppetlabs::SupportScript::Runner.new
         support.add_child(PuppetX::Puppetlabs::SupportScript::Scope::Base, name: '')
         support.run
-        return        
+        return
       else
         support_script = File.join(support_module, 'lib/puppet_x/puppetlabs/support_script/v1/puppet-enterprise-support.sh')
         Kernel.exec('/bin/bash', support_script, *support_script_parameters)

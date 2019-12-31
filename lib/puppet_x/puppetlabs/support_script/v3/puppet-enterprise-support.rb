@@ -1032,7 +1032,7 @@ EOS
       else
         dst_file = File.join(dst, "#{File.basename(src)}.gz")
       end
-      command_line = %(gzip -c '#{src}' > '#{dst_file}' && touch -c -r '#{src}')
+      command_line = %(gzip -c '#{src}' > '#{dst_file}' && touch -c -r '#{src}' '#{dst_file}')
 
       return false unless create_path(dst)
 
@@ -1111,7 +1111,7 @@ EOS
     def create_path(path, options = {})
       default_options = { :noop => noop? }
       options = default_options.merge(options)
-      FileUtils.mkdir_p(path, options)
+      FileUtils.mkdir_p(path, **options)
       true
     rescue => e
       log.error("%{exception_class} raised when creating directory: %{message}\n\t%{backtrace}" %
