@@ -1,0 +1,27 @@
+---
+name: PE Support Script Unit Tests
+on: [pull_request]
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-18.04
+    steps:
+      - uses: actions/checkout@v1
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-ruby@v1
+        with:
+          # Use the Ruby version shipped with the oldest supported PE release
+          # series.
+          #
+          # Currently: PE 2018.1 / Ruby 2.4
+          ruby-version: '2.4.x'
+      - name: Provision Test Tools
+        env:
+          GEM_SOURCE: 'https://rubygems.org'
+        run: |
+          gem install bundler
+          bundle install --path .bundle/lib --with-out=acceptance
+      - name: Ruby Unit Tests
+        run: |
+          bundle exec rake spec
