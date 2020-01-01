@@ -57,6 +57,22 @@ describe PuppetX::Puppetlabs::SupportScript::Runner do
       expect(subject.run).to eq(1)
     end
 
+    context 'when a child sets exit_status' do
+      let(:child) do
+        Class.new(PuppetX::Puppetlabs::SupportScript::Scope) do
+          def run
+            state[:exit_code] = 42
+          end
+        end
+      end
+
+      it 'returns the exit_status that was set' do
+        subject.add_child(child, name: 'some-child')
+
+        expect(subject.run).to eq(42)
+      end
+    end
+
     context 'when encryption is enabled' do
       before(:each) { script_settings.configure(encrypt: true) }
 
