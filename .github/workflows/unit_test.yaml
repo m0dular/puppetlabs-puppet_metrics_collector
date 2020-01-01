@@ -29,3 +29,6 @@ jobs:
           GEM_SKIP_INTERNAL: yes
         run: |
           bundle exec rake spec
+      - name: Bash Unit Tests
+        run: |
+          shellcheck lib/puppet_x/puppetlabs/support_script/v1/puppet-enterprise-support.sh
