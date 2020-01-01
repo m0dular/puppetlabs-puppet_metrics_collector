@@ -19,9 +19,13 @@ jobs:
       - name: Provision Test Tools
         env:
           GEM_SOURCE: 'https://rubygems.org'
+          GEM_SKIP_INTERNAL: yes
         run: |
           gem install bundler
-          bundle install --path .bundle/lib --with-out=acceptance
+          bundle config set path '.bundle/lib'
+          bundle install --without=acceptance
       - name: Ruby Unit Tests
+        env:
+          GEM_SKIP_INTERNAL: yes
         run: |
           bundle exec rake spec

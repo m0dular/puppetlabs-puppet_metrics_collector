@@ -13,7 +13,9 @@ group :acceptance do
   gem 'beaker', '~> 4.0'
   gem 'beaker-pe', '~> 2.0'
   gem 'scooter', '~> 4.3'
-  gem 'beaker-pe-large-environments', '~> 0.3.3'
+  unless ENV.key?('GEM_SKIP_INTERNAL')
+    gem 'beaker-pe-large-environments', '~> 0.3.3'
+  end
 end
 
 if File.exists? "#{__FILE__}.local"
