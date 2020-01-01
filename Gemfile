@@ -4,13 +4,16 @@ source ENV['GEM_SOURCE'] || 'https://artifactory.delivery.puppetlabs.net/artifac
 
 group :test do
   gem 'rake', '~> 12.2'
-  gem "beaker", "~> 4.0"
-  gem "beaker-pe", "~> 2.0"
-  gem "scooter", "~> 4.3"
-  gem "beaker-pe-large-environments", "~> 0.3.3"
   gem 'puppet', ENV['PUPPET_VERSION'] || '~> 5.5'
   gem "rspec", "~> 3.4"
   gem 'metadata-json-lint', '~> 2.0'
+end
+
+group :acceptance do
+  gem 'beaker', '~> 4.0'
+  gem 'beaker-pe', '~> 2.0'
+  gem 'scooter', '~> 4.3'
+  gem 'beaker-pe-large-environments', '~> 0.3.3'
 end
 
 if File.exists? "#{__FILE__}.local"
