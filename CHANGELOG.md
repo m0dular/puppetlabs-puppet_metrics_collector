@@ -1,3 +1,21 @@
+## [Release 2.13.1] - 2020-01-13
+
+Bugfix release of the Support Script.
+
+### Bug Fixes
+
+  - Ruby support script now applies `gzip` compression to large output files.
+
+  - Ruby support script no longer prints exit code to `stdout`.
+
+  - Ruby support script now collects the size of Postgres TOAST tables.
+
+  - Ruby support script now runs on RedHat variants such as Oracle Enterprise Linux
+    and Scientific Linux.
+
+  - Ruby support script responds to Ctrl-C, Ctrl-\, and SIGTERM.
+
+
 ## [Release 2.13.0] - 2019-10-16
 
 ### Summary
@@ -583,6 +601,7 @@ installations, not agents.
     seconds.
 
 
+[Release 2.13.1]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/2.13.0...2.13.1
 [Release 2.13.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/2.12.0...2.13.0
 [Release 2.12.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/2.11.0...2.12.0
 [Release 2.11.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/2.10.0...2.11.0
