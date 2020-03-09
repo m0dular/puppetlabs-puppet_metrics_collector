@@ -56,7 +56,7 @@ Please submit /var/tmp/puppet_enterprise_support_pe-201643-master_20170206144746
 The `puppet enterprise support` face operates by execcing a bash script
 located at:
 
- [files/puppet-enterprise-support](files/puppet-enterprise-support)
+ - [lib/puppet_x/puppetlabs/support_script/v1/puppet-enterprise-support.sh](lib/puppet_x/puppetlabs/support_script/v1/puppet-enterprise-support.sh)
 
 This script is laid out in three general sections:
 
@@ -114,9 +114,7 @@ Keep in mind the following guidelines when developing the support script:
 
   - New additions to the bash support script should follow the
     [Shell Style Guide][shell-guide] and pass a lint check administered by
-    [Shellcheck][shellcheck]. Be careful when examining the existing codebase
-    as there are several years worth of legacy cruft that was not held to
-    a high standard.
+    [Shellcheck][shellcheck].
 
   - Diagnostic functions should include guard statements that turn them
     into no-ops if required commands or data are missing. For example, the
@@ -145,8 +143,11 @@ run as part of an acceptance test. This extra layer of checking catches
 the use of undeclared variables or diagnostic functions that are failing
 due to incorrect input or missing guard statements.
 
-To run the acceptance suite, first use Bundler to install dependencies
-such as Beaker:
+To run the acceptance suite, first connect to the Puppet VPN as the test
+suite makes use of several resources that are only available on the internal
+network.
+
+Next, use Bundler to install dependencies such as Beaker:
 
     bundle install --path=.bundle/lib
 
@@ -166,7 +167,7 @@ Other PE builds can be tested by passing an X.Y version number to the helper:
 
 The helper will launch parallel tests for every PE configuration described
 by files in the tests/beaker/configs/ directory. Tests can take over ten
-minutes to run, but when they've finished a Python webserver will be launched
+minutes to run, but when they've finished a Ruby webserver will be launched
 to display the results:
 
     http://localhost:8000
