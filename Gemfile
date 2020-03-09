@@ -18,6 +18,10 @@ group :acceptance do
   end
 end
 
+group :development do
+  gem 'yard', '~> 0.9'
+end
+
 if File.exists? "#{__FILE__}.local"
   eval(File.read("#{__FILE__}.local"), binding)
 end
