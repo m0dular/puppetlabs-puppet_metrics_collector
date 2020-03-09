@@ -249,8 +249,24 @@ EOS
   # include the {Configable} module, which provides access to a singleton
   # instance shared by all objects.
   class Settings
+    # Access the configured {LogManager}.
+    #
+    # This object can be used to log messages at `debug`, `info`, `warn`, and
+    # `error` levels.
+    #
+    # @return [LogManager]
     attr_reader :log
+    # Access the configured settings.
+    #
+    # Values in this hash should only be read and never written.
+    #
+    # @return[Hash]
     attr_accessor :settings
+    # Access runtime state.
+    #
+    # Values can be stored or updated in this hash. Use carefully.
+    #
+    # @return[Hash]
     attr_accessor :state
 
     def self.instance
@@ -368,8 +384,14 @@ EOS
   module Configable
     extend Forwardable
 
+    # @!method log
+    #   @see Settings#log
     def_delegators :@config, :log
+    # @!method settings
+    #   @see Settings#settings
     def_delegators :@config, :settings
+    # @!method state
+    #   @see Settings#state
     def_delegators :@config, :state
 
     def initialize_configable
