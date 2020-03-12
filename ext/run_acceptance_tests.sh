@@ -23,13 +23,14 @@ webserver to display the test results.
   -t  A beaker-hostgenerator string to run tests against.
       May be passed multiple times.
 
-For example, to run tests against PE 2019.0, with monolithic installs of
-CentOS 7 and Ubuntu 18.04, and to preserve hosts if tests fail:
+For example, to run tests against the lastest "master" build of PE, with
+monolithic installs of CentOS 7 and Ubuntu 18.04, and to preserve hosts
+if tests fail:
 
 ./run_acceptance_tests.sh \\
   -p onfail \\
   -t centos7-64mdca -t ubuntu1804-mdca \\
-  -r 2019.0
+  -r master
 
 EOF
 }
@@ -57,15 +58,16 @@ while getopts hp:r:t: flag; do
 done
 
 if [[ "${#TEST_MATRIX[@]}" -eq 0 ]]; then
+  # Default for the "master" branch, or releases since PE 2019.2.
+  TEST_MATRIX=('centos7-64mdca'
+               'centos8-64mdca'
+               'sles12-64mdca'
+               'ubuntu1604-64mdca'
+               'ubuntu1804-64mdca'
+               'centos7-64amdc-64compile_master.af-64agent%2Cpe_postgres.')
+
+  # Special case older release pipelines.
   case "${PE_TEST_SERIES}" in
-  'master')
-    TEST_MATRIX=('centos7-64mdca'
-                 'centos8-64mdca'
-                 'sles12-64mdca'
-                 'ubuntu1604-64mdca'
-                 'ubuntu1804-64mdca'
-                 'centos7-64amdc-64compile_master.af-64agent%2Cpe_postgres.')
-    ;;
   '2018.1')
     TEST_MATRIX=('centos6-64mdca'
                  'centos7-64mdca'
@@ -84,7 +86,14 @@ fi
 build_url="https://artifactory.delivery.puppetlabs.net/artifactory/generic_enterprise__local/${PE_TEST_SERIES}/ci-ready/LATEST"
 printf 'Reading latest good build from: %s\n' "${build_url}"
 
-LATEST_GOOD_BUILD=$(curl -Ss "${build_url}")
+LATEST_GOOD_BUILD=$(curl -Ss --max-time 5 "${build_url}")
+
+if [[ $? -ne 0 ]]; then
+  printf '\nCould not download build information from:\n\t%s\nAre you connected to the internal Puppet network?\n' \
+         "${build_url}" >&2
+  exit 1
+fi
+
 printf "Testing build: %s\n" "${LATEST_GOOD_BUILD?}"
 
 export BEAKER_PE_DIR="https://artifactory.delivery.puppetlabs.net/artifactory/generic_enterprise__local/${PE_TEST_SERIES}/ci-ready/"

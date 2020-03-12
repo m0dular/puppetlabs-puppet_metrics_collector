@@ -160,10 +160,11 @@ Then, execute the test helper under the `ext/` directory:
 
     ./ext/run_acceptance_tests.sh
 
-The wrapper defaults to testing against the latest LTS nightly build.
-Other PE builds can be tested by passing an X.Y version number to the helper:
+The wrapper defaults to testing against the latest 2018.1 LTS nightly build.
+Other PE builds can be tested by passing an X.Y version number, or the string
+"master" to the helper:
 
-    ./ext/run_acceptance_tests.sh 2019.1
+    ./ext/run_acceptance_tests.sh master
 
 The helper will launch parallel tests for every PE configuration described
 by files in the tests/beaker/configs/ directory. Tests can take over ten
