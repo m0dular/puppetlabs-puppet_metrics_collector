@@ -57,12 +57,28 @@ while getopts hp:r:t: flag; do
 done
 
 if [[ "${#TEST_MATRIX[@]}" -eq 0 ]]; then
-  TEST_MATRIX=('centos6-64mdca'
-               'centos7-64mdca'
-               'sles12-64mdca'
-               'ubuntu1604-64mdca'
-               'ubuntu1804-64mdca'
-               'centos7-64am-64ad-64ac-64compile_master.af')
+  case "${PE_TEST_SERIES}" in
+  'master')
+    TEST_MATRIX=('centos7-64mdca'
+                 'centos8-64mdca'
+                 'sles12-64mdca'
+                 'ubuntu1604-64mdca'
+                 'ubuntu1804-64mdca'
+                 'centos7-64amdc-64compile_master.af-64agent%2Cpe_postgres.')
+    ;;
+  '2018.1')
+    TEST_MATRIX=('centos6-64mdca'
+                 'centos7-64mdca'
+                 'sles12-64mdca'
+                 'ubuntu1604-64mdca'
+                 'ubuntu1804-64mdca'
+                 'centos7-64am-64ad-64ac-64compile_master.af')
+    ;;
+  '2016.4')
+    TEST_MATRIX=('centos6-64mdca'
+                 'centos7-64mdca')
+    ;;
+  esac
 fi
 
 build_url="https://artifactory.delivery.puppetlabs.net/artifactory/generic_enterprise__local/${PE_TEST_SERIES}/ci-ready/LATEST"
