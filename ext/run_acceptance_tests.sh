@@ -17,6 +17,8 @@ webserver to display the test results.
       Default value is "never". Other values are:
         always onpass onfail
   -r  Release series of PE to test against as an X.Y string.
+      Also accepts the string "master" to test against the
+      very latest build.
       Default value is: ${PE_TEST_SERIES}
   -t  A beaker-hostgenerator string to run tests against.
       May be passed multiple times.
@@ -63,7 +65,7 @@ if [[ "${#TEST_MATRIX[@]}" -eq 0 ]]; then
                'centos7-64am-64ad-64ac-64compile_master.af')
 fi
 
-build_url="http://getpe.delivery.puppetlabs.net/latest/${PE_TEST_SERIES}"
+build_url="https://artifactory.delivery.puppetlabs.net/artifactory/generic_enterprise__local/${PE_TEST_SERIES}/ci-ready/LATEST"
 printf 'Reading latest good build from: %s\n' "${build_url}"
 
 LATEST_GOOD_BUILD=$(curl -Ss "${build_url}")
