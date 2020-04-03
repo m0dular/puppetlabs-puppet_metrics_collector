@@ -1,3 +1,15 @@
+## [Release 2.13.2] - 2020-04-03
+
+Bugfix release of the Support Script.
+
+### Bug Fixes
+
+  - Ruby support script now collects service configuration from `/etc/default`
+    and `/etc/sysconfig`.
+
+  - Various and sundry fixes and improvements to documentation and test suites.
+
+
 ## [Release 2.13.1] - 2020-01-13
 
 Bugfix release of the Support Script.
@@ -601,6 +613,7 @@ installations, not agents.
     seconds.
 
 
+[Release 2.13.2]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/2.13.1...2.13.2
 [Release 2.13.1]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/2.13.0...2.13.1
 [Release 2.13.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/2.12.0...2.13.0
 [Release 2.12.0]: https://github.com/puppetlabs/puppetlabs-pe_support_script/compare/2.11.0...2.12.0

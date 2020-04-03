@@ -22,7 +22,7 @@ module Puppetlabs
 # This module contains components for running diagnostic checks on Puppet
 # Enterprise installations.
 module SupportScript
-  VERSION = '3.0.0.beta5'.freeze
+  VERSION = '3.0.0.beta6'.freeze
   DOC_URL = 'https://puppet.com/docs/pe/2018.1/getting_support_for_pe.html#the-pe-support-script'.freeze
 
   PGP_RECIPIENT = 'FD172197'.freeze
