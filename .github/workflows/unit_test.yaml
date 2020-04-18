@@ -6,7 +6,7 @@ jobs:
   unit-tests:
     runs-on: ubuntu-18.04
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v2
         with:
           fetch-depth: 1
       - uses: actions/setup-ruby@v1
