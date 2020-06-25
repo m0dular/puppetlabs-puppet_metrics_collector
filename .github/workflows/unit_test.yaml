@@ -12,7 +12,17 @@ on:
     types: [unit_tests]
 
 jobs:
-  unit-tests:
+  bash-unit-tests:
+    runs-on: ubuntu-18.04
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 1
+      - name: Bash Unit Tests
+        run: |
+          shellcheck lib/puppet_x/puppetlabs/support_script/v1/puppet-enterprise-support.sh
+
+  ruby-unit-tests:
     runs-on: ubuntu-18.04
     steps:
       - uses: actions/checkout@v2
@@ -38,6 +48,3 @@ jobs:
           GEM_SKIP_INTERNAL: yes
         run: |
           bundle exec rake spec
-      - name: Bash Unit Tests
-        run: |
-          shellcheck lib/puppet_x/puppetlabs/support_script/v1/puppet-enterprise-support.sh
