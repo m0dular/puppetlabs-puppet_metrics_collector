@@ -1,6 +1,15 @@
 ---
 name: PE Support Script Unit Tests
-on: [pull_request]
+
+on:
+  push:
+    branches: [master]
+    paths-ignore: ['*.md']
+  pull_request:
+    type: [opened, reopened, edited]
+    paths-ignore: ['*.md']
+  repository_dispatch:
+    types: [unit_tests]
 
 jobs:
   unit-tests:
