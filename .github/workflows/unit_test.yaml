@@ -3,7 +3,7 @@ name: PE Support Script Unit Tests
 
 on:
   push:
-    branches: [master]
+    branches: [dev]
     paths-ignore: ['*.md']
   pull_request:
     type: [opened, reopened, edited]
