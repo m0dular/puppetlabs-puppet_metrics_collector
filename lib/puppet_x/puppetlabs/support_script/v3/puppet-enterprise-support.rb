@@ -2365,7 +2365,7 @@ EOS
     self.add_child(Check::GatherFiles,
                    name: 'metrics',
                    files: [{from: '/opt/puppetlabs/puppet-metrics-collector',
-                            copy: ['orchestrator/'],
+                            copy: ['ace/', 'bolt/', 'orchestrator/'],
                             to: 'metrics'}])
     self.add_child(Check::PeOrchestrationStatus,
                    name: 'status',
