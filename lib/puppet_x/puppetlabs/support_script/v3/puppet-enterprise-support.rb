@@ -1393,6 +1393,99 @@ EOS
     end
   end
 
+  # A generic check for collecting files
+  #
+  # This check gathers a list of files and directories, subject to limits on
+  # age and disk space. The file list may include glob expressions which are
+  # expanded.
+  class Check::GatherFiles < Check
+    def setup(**options)
+      # TODO: assert that @files is a match for
+      # Array[Struct[{from    => Optional[String[1]],
+      #               copy    => Array[String[1], 1],
+      #               to      => String[1],
+      #               max_age => Optional[Integer]}]]
+      @files = options[:files]
+
+      # TODO: Solaris and AIX do `df` in their own very, very special ways.
+      #       `df` and `find -ls` on non-Linux returns 512 byte blocks instead of 1024.
+      #       The copy_drop* functions assume flags that are specific to
+      #       GNU `cp`.
+      confine(kernel: 'linux')
+    end
+
+    def run
+      @files.map! do |batch|
+        result = batch.dup
+        result[:max_age] ||= settings[:log_age]
+        # Resolve any globs in the copy array to a single list of files.
+        result[:copy] = if batch[:from].nil?
+                          Dir.glob(result[:copy])
+                        else
+                          base = Pathname.new(batch[:from])
+                          absolute_paths = result[:copy].map {|p| base.join(p) }
+                          Pathname.glob(absolute_paths).map {|p| p.relative_path_from(base).to_s }
+                        end
+        result[:to] = File.join(state[:drop_directory], result[:to])
+
+        result
+      end
+
+      return unless disk_available?
+
+      @files.each do |batch|
+        batch[:copy].each do |src|
+          copy_drop(src, batch[:to], { 'age' => batch[:max_age], 'cwd' => batch[:from] })
+        end
+      end
+    end
+
+    # Check there is enough disk space to copy the logs
+    #
+    # @return [true, false] A boolean value indicating whether enough
+    #   space is available.
+    def disk_available?
+      return true if noop?
+
+      df_output = exec_return_result("df '#{state[:drop_directory]}'|tail -n1|tr -s ' '|cut -d' ' -f4").chomp
+      free = Integer(df_output) rescue nil
+
+      if free.nil?
+        log.error('Could not determine disk space available on %{drop_dir}, df returned: %{output}'%
+                  {drop_dir: state[:drop_directory],
+                   output: df_output})
+        return false
+      end
+
+      required = 0
+      @files.each do |batch|
+        # NOTE: Facter's execution expands the path of the first command,
+        #       which breaks `cd`. See FACT-2054.
+        cd_option = batch[:from].nil? ? '' : "true && cd '#{batch[:from]}' && "
+        age_filter = (batch[:max_age].is_a?(Integer) && (batch[:max_age] > 0)) ? " -mtime -#{batch[:max_age]}" : ''
+        batch[:copy].each do |f|
+          used = exec_return_result("#{cd_option}find '#{f}' -type f #{age_filter} -ls|awk '{total=total+$2}END{print total}'").chomp
+          required += Integer(used) unless used.empty?
+        end
+      end
+
+      # We require double the free space as we copy the file, then copy it
+      # again into a compressed archive.
+      if ((required * 2) > free)
+        log.error("Not enough free disk space in %{output_dir} to gather %{name}.\nAvailable: %{available} MB, Required: %{required} MB" %
+                  {output_dir: settings[:dir],
+                   name: self.name,
+                   # Convert 1024 byte blocks to MB
+                   available: (free) / 1024,
+                   required: (required * 2) / 1024})
+
+        false
+      else
+        true
+      end
+    end
+  end
+
   # Gather basic diagnostics
   #
   # This check produces:
@@ -1584,6 +1677,11 @@ EOS
     self.add_child(Check::SystemConfig, name: 'config')
     self.add_child(Check::SystemLogs, name: 'logs')
     self.add_child(Check::SystemStatus, name: 'status')
+    self.add_child(Check::GatherFiles,
+                   name: 'metrics',
+                   files: [{from: '/opt/puppetlabs/puppet-metrics-collector',
+                            copy: ['system_cpu/', 'system_memory/', 'system_processes/'],
+                            to: 'metrics'}])
 
     def setup(**options)
       # TODO: Many diagnostics contained here are also applicable to Solaris
@@ -1591,99 +1689,6 @@ EOS
       #       to a separate set of checks or scope. Windows needs its own
       #       things.
       confine(kernel: 'linux')
-    end
-  end
-
-  # A generic check for collecting files
-  #
-  # This check gathers a list of files and directories, subject to limits on
-  # age and disk space. The file list may include glob expressions which are
-  # expanded.
-  class Check::GatherFiles < Check
-    def setup(**options)
-      # TODO: assert that @files is a match for
-      # Array[Struct[{from    => Optional[String[1]],
-      #               copy    => Array[String[1], 1],
-      #               to      => String[1],
-      #               max_age => Optional[Integer]}]]
-      @files = options[:files]
-
-      # TODO: Solaris and AIX do `df` in their own very, very special ways.
-      #       `df` and `find -ls` on non-Linux returns 512 byte blocks instead of 1024.
-      #       The copy_drop* functions assume flags that are specific to
-      #       GNU `cp`.
-      confine(kernel: 'linux')
-    end
-
-    def run
-      @files.map! do |batch|
-        result = batch.dup
-        result[:max_age] ||= settings[:log_age]
-        # Resolve any globs in the copy array to a single list of files.
-        result[:copy] = if batch[:from].nil?
-                          Dir.glob(result[:copy])
-                        else
-                          base = Pathname.new(batch[:from])
-                          absolute_paths = result[:copy].map {|p| base.join(p) }
-                          Pathname.glob(absolute_paths).map {|p| p.relative_path_from(base).to_s }
-                        end
-        result[:to] = File.join(state[:drop_directory], result[:to])
-
-        result
-      end
-
-      return unless disk_available?
-
-      @files.each do |batch|
-        batch[:copy].each do |src|
-          copy_drop(src, batch[:to], { 'age' => batch[:max_age], 'cwd' => batch[:from] })
-        end
-      end
-    end
-
-    # Check there is enough disk space to copy the logs
-    #
-    # @return [true, false] A boolean value indicating whether enough
-    #   space is available.
-    def disk_available?
-      return true if noop?
-
-      df_output = exec_return_result("df '#{state[:drop_directory]}'|tail -n1|tr -s ' '|cut -d' ' -f4").chomp
-      free = Integer(df_output) rescue nil
-
-      if free.nil?
-        log.error('Could not determine disk space available on %{drop_dir}, df returned: %{output}'%
-                  {drop_dir: state[:drop_directory],
-                   output: df_output})
-        return false
-      end
-
-      required = 0
-      @files.each do |batch|
-        # NOTE: Facter's execution expands the path of the first command,
-        #       which breaks `cd`. See FACT-2054.
-        cd_option = batch[:from].nil? ? '' : "true && cd '#{batch[:from]}' && "
-        age_filter = (batch[:max_age].is_a?(Integer) && (batch[:max_age] > 0)) ? " -mtime -#{batch[:max_age]}" : ''
-        batch[:copy].each do |f|
-          used = exec_return_result("#{cd_option}find '#{f}' -type f #{age_filter} -ls|awk '{total=total+$2}END{print total}'").chomp
-          required += Integer(used) unless used.empty?
-        end
-      end
-
-      # We require double the free space as we copy the file, then copy it
-      # again into a compressed archive.
-      if ((required * 2) > free)
-        log.error("Not enough free disk space in %{output_dir} to gather %{name}.\nAvailable: %{available} MB, Required: %{required} MB" %
-                  {output_dir: settings[:dir],
-                   name: self.name,
-                   # Convert 1024 byte blocks to MB
-                   available: (free) / 1024,
-                   required: (required * 2) / 1024})
-
-        false
-      else
-        true
-      end
     end
   end
 
