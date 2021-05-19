@@ -18,6 +18,14 @@ class puppet_metrics_collector::system::vmware (
     'present' => directory,
     'absent'  => absent,
   }
+  $service_ensure = $metrics_ensure ? {
+    'present' => running,
+    'absent'  => stopped,
+  }
+  $enable_ensure = $metrics_ensure ? {
+    'present' => true,
+    'absent'  => false,
+  }
 
   file { $metrics_output_dir:
     ensure => $metrics_output_dir_ensure,
@@ -34,28 +42,69 @@ class puppet_metrics_collector::system::vmware (
       message  => 'VMware metrics collection requires vmware-toolbox-cmd to be on the PATH',
       loglevel => warning,
     }
-    # Set cron job to absent to avoid spamming mailboxes with errors.
-    $_cron_ensure = 'absent'
-  } else {
-    $_cron_ensure = $metrics_ensure
   }
 
-  cron { 'vmware_metrics_collection':
-    ensure  => $_cron_ensure,
-    command => $metrics_command,
-    user    => 'root',
-    minute  => "*/${collection_frequency}",
-  }
-
-  # The hardcoded numbers with the fqdn_rand calls are to trigger the metrics_tidy
-  # command to run at a randomly selected time between 12:00 AM and 3:00 AM.
-  # NOTE - if adding a new service, the name of the service must be added to the valid_paths array in files/metrics_tidy
-
-  cron { 'vmware_metrics_tidy':
+  file { 'pe_vmware-metrics-service':
     ensure  => $metrics_ensure,
-    command => "${puppet_metrics_collector::system::scripts_dir}/metrics_tidy -d ${metrics_output_dir} -r ${retention_days}",
-    user    => 'root',
-    hour    => fqdn_rand(3, 'vmware'),
-    minute  => (5 * fqdn_rand(11, 'vmware')),
+    path    => '/etc/systemd/system/pe_vmware-metrics.service',
+    content => epp('puppet_metrics_collector/service.epp',
+      { 'service' => 'pe_vmware', 'metrics_command' => $metrics_command }
+    ),
+    notify  => Exec['puppet_metrics_collector_daemon_reload'],
+  }
+  file { 'pe_vmware-metrics-timer':
+    ensure  => $metrics_ensure,
+    path    => '/etc/systemd/system/pe_vmware-metrics.timer',
+    content => epp('puppet_metrics_collector/timer.epp',
+      { 'service' => 'pe_vmware', 'minute' => String($collection_frequency) }
+    ),
+    notify  => Exec['puppet_metrics_collector_daemon_reload'],
+  }
+
+  # NOTE - if adding a new service, the name of the service must be added to the valid_paths array in files/metrics_tidy
+  $tidy_command = "${puppet_metrics_collector::system::scripts_dir}/metrics_tidy -d ${metrics_output_dir} -r ${retention_days}"
+  file { 'pe_vmware-metrics-tidy-service':
+    ensure  => $metrics_ensure,
+    path    => '/etc/systemd/system/pe_vmware-tidy.service',
+    content => epp('puppet_metrics_collector/tidy.epp',
+      { 'service' => 'pe_vmware', 'tidy_command' => $tidy_command }
+    ),
+    notify  => Exec['puppet_metrics_collector_daemon_reload'],
+  }
+  file { 'pe_vmware-metrics-tidy-timer':
+    ensure  => $metrics_ensure,
+    path    => '/etc/systemd/system/pe_vmware-tidy.timer',
+    content => epp('puppet_metrics_collector/tidy_timer.epp',
+      { 'service' => 'pe_vmware' }
+    ),
+    notify  => Exec['puppet_metrics_collector_daemon_reload'],
+  }
+
+  service { 'pe_vmware-metrics.service':
+    notify  => Exec['puppet_metrics_collector_daemon_reload'],
+  }
+  service { 'pe_vmware-metrics.timer':
+    ensure    => $service_ensure,
+    enable    => $enable_ensure,
+    notify    => Exec['puppet_metrics_collector_daemon_reload'],
+    subscribe => File['/etc/systemd/system/pe_vmware-metrics.timer'],
+  }
+
+  service { 'pe_vmware-tidy.service':
+    notify  => Exec['puppet_metrics_collector_daemon_reload'],
+  }
+  service { 'pe_vmware-tidy.timer':
+    ensure    => $service_ensure,
+    enable    => $enable_ensure,
+    notify    => Exec['puppet_metrics_collector_daemon_reload'],
+    subscribe => File['/etc/systemd/system/pe_vmware-tidy.timer'],
+  }
+
+
+  # Legacy cleanup
+  ['vmware_metrics_tidy', 'vmware_metrics_collection'].each |$cron| {
+    cron { $cron:
+      ensure => absent,
+    }
   }
 }

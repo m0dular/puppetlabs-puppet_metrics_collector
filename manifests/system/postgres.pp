@@ -17,6 +17,15 @@ class puppet_metrics_collector::system::postgres (
     'present' => directory,
     'absent'  => absent,
   }
+  $service_ensure = $metrics_ensure ? {
+    'present' => running,
+    'absent'  => stopped,
+  }
+  $enable_ensure = $metrics_ensure ? {
+    'present' => true,
+    'absent'  => false,
+  }
+
 
   file { $metrics_output_dir:
     ensure => $metrics_output_dir_ensure,
@@ -28,22 +37,66 @@ class puppet_metrics_collector::system::postgres (
                       '--output_dir', $metrics_output_dir,
                       '> /dev/null'].join(' ')
 
-  cron { 'postgres_metrics_collection':
+  file { 'postgres_metrics_collection-service':
     ensure  => $metrics_ensure,
-    command => $metrics_command,
-    user    => 'root',
-    minute  => "*/${collection_frequency}",
+    path    => '/etc/systemd/system/pe_postgres-metrics.service',
+    content => epp('puppet_metrics_collector/service.epp',
+      { 'service' => 'pe_postgres', 'metrics_command' => $metrics_command }
+    ),
+    notify  => Exec['puppet_metrics_collector_daemon_reload'],
+  }
+  file { 'postgres_metrics_collection-timer':
+    ensure  => $metrics_ensure,
+    path    => '/etc/systemd/system/pe_postgres-metrics.timer',
+    content => epp('puppet_metrics_collector/timer.epp',
+      { 'service' => 'pe_postgres', 'minute' => String($collection_frequency) }
+    ),
+    notify  => Exec['puppet_metrics_collector_daemon_reload'],
   }
 
-  # The hardcoded numbers with the fqdn_rand calls are to trigger the metrics_tidy
-  # command to run at a randomly selected time between 12:00 AM and 3:00 AM.
   # NOTE - if adding a new service, the name of the service must be added to the valid_paths array in files/metrics_tidy
-
-  cron { 'postgres_metrics_tidy':
+  $tidy_command = "${puppet_metrics_collector::system::scripts_dir}/metrics_tidy -d ${metrics_output_dir} -r ${retention_days}"
+  file { 'pe_postgres-metrics-tidy-service':
     ensure  => $metrics_ensure,
-    command => "${puppet_metrics_collector::system::scripts_dir}/metrics_tidy -d ${metrics_output_dir} -r ${retention_days}",
-    user    => 'root',
-    hour    => fqdn_rand(3, 'postgres'),
-    minute  => (5 * fqdn_rand(11, 'postgres')),
+    path    => '/etc/systemd/system/pe_postgres-tidy.service',
+    content => epp('puppet_metrics_collector/tidy.epp',
+      { 'service' => 'pe_postgres', 'tidy_command' => $tidy_command }
+    ),
+    notify  => Exec['puppet_metrics_collector_daemon_reload'],
+  }
+  file { 'pe_postgres-metrics-tidy-timer':
+    ensure  => $metrics_ensure,
+    path    => '/etc/systemd/system/pe_postgres-tidy.timer',
+    content => epp('puppet_metrics_collector/tidy_timer.epp',
+      { 'service' => 'pe_postgres' }
+    ),
+    notify  => Exec['puppet_metrics_collector_daemon_reload'],
+  }
+  service { 'pe_postgres-metrics.service':
+    notify  => Exec['puppet_metrics_collector_daemon_reload'],
+  }
+  service { 'pe_postgres-metrics.timer':
+    ensure    => $service_ensure,
+    enable    => $enable_ensure,
+    notify    => Exec['puppet_metrics_collector_daemon_reload'],
+    subscribe => File['/etc/systemd/system/pe_postgres-metrics.timer'],
+  }
+
+  service { 'pe_postgres-tidy.service':
+    notify  => Exec['puppet_metrics_collector_daemon_reload'],
+  }
+  service { 'pe_postgres-tidy.timer':
+    ensure    => $service_ensure,
+    enable    => $enable_ensure,
+    notify    => Exec['puppet_metrics_collector_daemon_reload'],
+    subscribe => File['/etc/systemd/system/pe_postgres-tidy.timer'],
+  }
+
+
+  # Legacy cleanup
+  ['postgres_metrics_tidy', 'postgres_metrics_collection'].each |$cron| {
+    cron { $cron:
+      ensure => absent,
+    }
   }
 }

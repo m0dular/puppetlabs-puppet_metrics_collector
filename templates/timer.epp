@@ -1,0 +1,12 @@
+<%- | String $service, String $minute | -%>
+[Unit]
+Description=Timer to run the service to collect PE metrics
+Requires=<%= $service %>-metrics.service
+
+[Timer]
+OnCalendar=*-*-* *:<%= $minute %>
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+

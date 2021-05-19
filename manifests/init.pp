@@ -18,16 +18,12 @@ class puppet_metrics_collector (
   String                  $bolt_metrics_ensure         = 'present',
   Array[String]           $bolt_hosts                  = puppet_metrics_collector::hosts_with_pe_profile('bolt_server'),
   Integer                 $bolt_port                   = 62658,
-  String                  $activemq_metrics_ensure     = 'absent',
-  Array[String]           $activemq_hosts              = puppet_metrics_collector::hosts_with_pe_profile('amq::broker'),
-  Integer                 $activemq_port               = 8161,
   Optional[String]        $override_metrics_command    = undef,
   Optional[Array[String]] $puppetserver_excludes       = undef,
   Optional[Array[String]] $puppetdb_excludes           = undef,
   Optional[Array[String]] $orchestrator_excludes       = undef,
   Optional[Array[String]] $ace_excludes                = undef,
   Optional[Array[String]] $bolt_excludes               = undef,
-  Optional[Array[String]] $activemq_excludes           = undef,
   Optional[Enum['influxdb', 'graphite', 'splunk_hec']] $metrics_server_type = undef,
   Optional[String]        $metrics_server_hostname     = undef,
   Optional[Integer]       $metrics_server_port         = undef,
@@ -36,82 +32,94 @@ class puppet_metrics_collector (
   $config_dir  = "${output_dir}/config"
   $scripts_dir = "${output_dir}/scripts"
 
-  # If the puppet_metrics_collector::system class is evaluted first,
-  # File[$output_dir] will already be defined along with common scripts.
-  if !defined(File[$output_dir]) {
-    file { [$output_dir, $scripts_dir]:
+  if $facts.dig('puppet_metrics_collector', 'have_systemd') {
+    # If the puppet_metrics_collector::system class is evaluted first,
+    # File[$output_dir] will already be defined along with common scripts.
+    if !defined(File[$output_dir]) {
+      file { [$output_dir, $scripts_dir]:
+        ensure => directory,
+      }
+
+      file { "${scripts_dir}/create-metrics-archive":
+        ensure => file,
+        mode   => '0755',
+        source => 'puppet:///modules/puppet_metrics_collector/create-metrics-archive'
+      }
+
+      file { "${scripts_dir}/metrics_tidy":
+        ensure => file,
+        mode   => '0744',
+        source => 'puppet:///modules/puppet_metrics_collector/metrics_tidy'
+      }
+    }
+
+    file { $config_dir:
       ensure => directory,
     }
 
-    file { "${scripts_dir}/create-metrics-archive":
+    file { "${scripts_dir}/json2timeseriesdb" :
       ensure => file,
       mode   => '0755',
-      source => 'puppet:///modules/puppet_metrics_collector/create-metrics-archive'
+      source => 'puppet:///modules/puppet_metrics_collector/json2timeseriesdb'
     }
 
-    file { "${scripts_dir}/metrics_tidy":
+    file { "${scripts_dir}/pe_metrics.rb" :
       ensure => file,
-      mode   => '0744',
-      source => 'puppet:///modules/puppet_metrics_collector/metrics_tidy'
+      mode   => '0755',
+      source => 'puppet:///modules/puppet_metrics_collector/pe_metrics.rb'
     }
-  }
 
-  file { $config_dir:
-    ensure => directory,
-  }
+    file { "${scripts_dir}/puma_metrics" :
+      ensure => file,
+      mode   => '0755',
+      source => 'puppet:///modules/puppet_metrics_collector/puma_metrics'
+    }
 
-  file { "${scripts_dir}/json2timeseriesdb" :
-    ensure => file,
-    mode   => '0755',
-    source => 'puppet:///modules/puppet_metrics_collector/json2timeseriesdb'
-  }
+    file { "${scripts_dir}/tk_metrics" :
+      ensure => file,
+      mode   => '0755',
+      source => 'puppet:///modules/puppet_metrics_collector/tk_metrics'
+    }
 
-  file { "${scripts_dir}/pe_metrics.rb" :
-    ensure => file,
-    mode   => '0755',
-    source => 'puppet:///modules/puppet_metrics_collector/pe_metrics.rb'
-  }
+    exec { 'puppet_metrics_collector_daemon_reload':
+      command     => 'systemctl daemon-reload',
+      path        => ['/bin', '/usr/bin'],
+      refreshonly => true,
+    }
 
-  file { "${scripts_dir}/puma_metrics" :
-    ensure => file,
-    mode   => '0755',
-    source => 'puppet:///modules/puppet_metrics_collector/puma_metrics'
-  }
+    include puppet_metrics_collector::service::puppetserver
+    include puppet_metrics_collector::service::puppetdb
+    include puppet_metrics_collector::service::orchestrator
+    include puppet_metrics_collector::service::ace
+    include puppet_metrics_collector::service::bolt
 
-  file { "${scripts_dir}/tk_metrics" :
-    ensure => file,
-    mode   => '0755',
-    source => 'puppet:///modules/puppet_metrics_collector/tk_metrics'
-  }
+    # LEGACY CLEANUP
 
-  include puppet_metrics_collector::service::puppetserver
-  include puppet_metrics_collector::service::puppetdb
-  include puppet_metrics_collector::service::orchestrator
-  include puppet_metrics_collector::service::ace
-  include puppet_metrics_collector::service::bolt
-  include puppet_metrics_collector::service::activemq
+    # Clean up old metrics directories created by the module before it was renamed.
 
-  # LEGACY CLEANUP
+    $legacy_dir      = '/opt/puppetlabs/pe_metric_curl_cron_jobs'
+    $safe_output_dir = shellquote($output_dir)
 
-  # Clean up old metrics directories created by the module before it was renamed.
+    exec { "migrate ${legacy_dir} directory":
+      path    => '/bin:/usr/bin',
+      command => "mv ${legacy_dir} ${safe_output_dir}",
+      onlyif  => "[ ! -e ${safe_output_dir} -a -e ${legacy_dir} ]",
+      before  => File[$output_dir],
+    }
 
-  $legacy_dir      = '/opt/puppetlabs/pe_metric_curl_cron_jobs'
-  $safe_output_dir = shellquote($output_dir)
+    $legacy_files = [
+      '/opt/puppetlabs/bin/puppet-metrics-collector',
+      '/opt/puppetlabs/puppet-metrics-collector/bin',
+    ]
 
-  exec { "migrate ${legacy_dir} directory":
-    path    => '/bin:/usr/bin',
-    command => "mv ${legacy_dir} ${safe_output_dir}",
-    onlyif  => "[ ! -e ${safe_output_dir} -a -e ${legacy_dir} ]",
-    before  => File[$output_dir],
-  }
-
-  $legacy_files = [
-    '/opt/puppetlabs/bin/puppet-metrics-collector',
-    '/opt/puppetlabs/puppet-metrics-collector/bin',
-  ]
-
-  file { $legacy_files :
-    ensure => absent,
-    force  => true,
+    file { $legacy_files :
+      ensure => absent,
+      force  => true,
+    }
+  } else {
+    notify { 'systemd_provider_warning':
+      message  => 'This module only works with systemd as the provider',
+      loglevel => warning,
+    }
   }
 }

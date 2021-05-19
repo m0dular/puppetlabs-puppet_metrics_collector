@@ -7,7 +7,7 @@ class puppet_metrics_collector::system::processes (
 ) {
   puppet_metrics_collector::sar_metric { 'system_processes' :
     metric_ensure             => $metrics_ensure,
-    cron_minute               => "*/${collection_frequency}",
+    cron_minute               => "0/${collection_frequency}",
     retention_days            => $retention_days,
     collection_frequency      => $collection_frequency,
     polling_frequency_seconds => $polling_frequency_seconds,

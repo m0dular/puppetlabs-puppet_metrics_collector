@@ -26,6 +26,11 @@ appveyor.yml:
 Rakefile:
   changelog_user: "puppetlabs"
 
+spec/default_facts.yml:
+  extra_facts:
+    pe_server_version: '2016.4.5'
+    puppet_metrics_collector:
+      have_systemd: true
 .rubocop.yml:
   default_configs:
     "Rspec/NamedSubject":
