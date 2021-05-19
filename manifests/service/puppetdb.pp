@@ -339,7 +339,7 @@ class puppet_metrics_collector::service::puppetdb (
 
   puppet_metrics_collector::pe_metric { 'puppetdb' :
     metric_ensure            => $metrics_ensure,
-    cron_minute              => "*/${collection_frequency}",
+    cron_minute              => "0/${collection_frequency}",
     retention_days           => $retention_days,
     hosts                    => $hosts,
     metrics_port             => $_port,

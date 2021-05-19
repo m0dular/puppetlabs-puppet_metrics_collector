@@ -84,6 +84,12 @@ class puppet_metrics_collector (
     source => 'puppet:///modules/puppet_metrics_collector/tk_metrics'
   }
 
+  exec { 'puppet_metrics_collector_daemon_reload':
+    command     => 'systemctl daemon-reload',
+    path        => ['/bin', '/usr/bin'],
+    refreshonly => true,
+  }
+
   include puppet_metrics_collector::service::puppetserver
   include puppet_metrics_collector::service::puppetdb
   include puppet_metrics_collector::service::orchestrator

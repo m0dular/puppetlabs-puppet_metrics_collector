@@ -14,7 +14,7 @@ class puppet_metrics_collector::service::ace (
   ) {
   puppet_metrics_collector::pe_metric { 'ace' :
     metric_ensure           => $metrics_ensure,
-    cron_minute             => "*/${collection_frequency}",
+    cron_minute             => "0/${collection_frequency}",
     retention_days          => $retention_days,
     hosts                   => $hosts,
     metrics_port            => $port,
