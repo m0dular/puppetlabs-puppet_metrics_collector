@@ -50,7 +50,7 @@ class puppet_metrics_collector::system::vmware (
     content => epp('puppet_metrics_collector/service.epp',
       { 'service' => 'pe_vmware', 'metrics_command' => $metrics_command }
     ),
-    notify  => Exec['puppet_metrics_collector_daemon_reload'],
+    notify  => Exec['puppet_metrics_collector_system_daemon_reload'],
   }
   file { 'pe_vmware-metrics-timer':
     ensure  => $metrics_ensure,
@@ -58,7 +58,7 @@ class puppet_metrics_collector::system::vmware (
     content => epp('puppet_metrics_collector/timer.epp',
       { 'service' => 'pe_vmware', 'minute' => String($collection_frequency) }
     ),
-    notify  => Exec['puppet_metrics_collector_daemon_reload'],
+    notify  => Exec['puppet_metrics_collector_system_daemon_reload'],
   }
 
   # NOTE - if adding a new service, the name of the service must be added to the valid_paths array in files/metrics_tidy
@@ -69,7 +69,7 @@ class puppet_metrics_collector::system::vmware (
     content => epp('puppet_metrics_collector/tidy.epp',
       { 'service' => 'pe_vmware', 'tidy_command' => $tidy_command }
     ),
-    notify  => Exec['puppet_metrics_collector_daemon_reload'],
+    notify  => Exec['puppet_metrics_collector_system_daemon_reload'],
   }
   file { 'pe_vmware-metrics-tidy-timer':
     ensure  => $metrics_ensure,
@@ -77,26 +77,26 @@ class puppet_metrics_collector::system::vmware (
     content => epp('puppet_metrics_collector/tidy_timer.epp',
       { 'service' => 'pe_vmware' }
     ),
-    notify  => Exec['puppet_metrics_collector_daemon_reload'],
+    notify  => Exec['puppet_metrics_collector_system_daemon_reload'],
   }
 
   service { 'pe_vmware-metrics.service':
-    notify  => Exec['puppet_metrics_collector_daemon_reload'],
+    notify  => Exec['puppet_metrics_collector_system_daemon_reload'],
   }
   service { 'pe_vmware-metrics.timer':
     ensure    => $service_ensure,
     enable    => $enable_ensure,
-    notify    => Exec['puppet_metrics_collector_daemon_reload'],
+    notify    => Exec['puppet_metrics_collector_system_daemon_reload'],
     subscribe => File['/etc/systemd/system/pe_vmware-metrics.timer'],
   }
 
   service { 'pe_vmware-tidy.service':
-    notify  => Exec['puppet_metrics_collector_daemon_reload'],
+    notify  => Exec['puppet_metrics_collector_system_daemon_reload'],
   }
   service { 'pe_vmware-tidy.timer':
     ensure    => $service_ensure,
     enable    => $enable_ensure,
-    notify    => Exec['puppet_metrics_collector_daemon_reload'],
+    notify    => Exec['puppet_metrics_collector_system_daemon_reload'],
     subscribe => File['/etc/systemd/system/pe_vmware-tidy.timer'],
   }
 

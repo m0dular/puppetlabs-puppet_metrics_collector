@@ -46,21 +46,21 @@ define puppet_metrics_collector::sar_metric (
   # command to run at a randomly selected time between 12:00 AM and 3:00 AM.
   # NOTE - if adding a new service, the name of the service must be added to the valid_paths array in files/metrics_tidy
 
-  $tidy_command = "${puppet_metrics_collector::scripts_dir}/metrics_tidy -d ${metrics_output_dir} -r ${retention_days}"
+  $tidy_command = "${puppet_metrics_collector::system::scripts_dir}/metrics_tidy -d ${metrics_output_dir} -r ${retention_days}"
 
   file {"/etc/systemd/system/${metrics_type}-metrics.service":
     ensure  => $metric_ensure,
     content => epp('puppet_metrics_collector/service.epp',
       { 'service' => $metrics_type, 'metrics_command' => $metrics_command }
     ),
-    notify  => Exec['puppet_metrics_collector_daemon_reload'],
+    notify  => Exec['puppet_metrics_collector_system_daemon_reload'],
   }
   file {"/etc/systemd/system/${metrics_type}-metrics.timer":
     ensure  => $metric_ensure,
     content => epp('puppet_metrics_collector/timer.epp',
       { 'service' => $metrics_type, 'minute' => $cron_minute },
     ),
-    notify  => Exec['puppet_metrics_collector_daemon_reload'],
+    notify  => Exec['puppet_metrics_collector_system_daemon_reload'],
   }
 
   file {"/etc/systemd/system/${metrics_type}-tidy.service":
@@ -68,33 +68,33 @@ define puppet_metrics_collector::sar_metric (
     content => epp('puppet_metrics_collector/tidy.epp',
       { 'service' => $metrics_type, 'tidy_command' => $tidy_command }
     ),
-    notify  => Exec['puppet_metrics_collector_daemon_reload'],
+    notify  => Exec['puppet_metrics_collector_system_daemon_reload'],
   }
   file {"/etc/systemd/system/${metrics_type}-tidy.timer":
     ensure  => $metric_ensure,
     content => epp('puppet_metrics_collector/tidy_timer.epp',
       { 'service' => $metrics_type }
     ),
-    notify  => Exec['puppet_metrics_collector_daemon_reload'],
+    notify  => Exec['puppet_metrics_collector_system_daemon_reload'],
   }
 
   service { "${metrics_type}-metrics.service":
-    notify  => Exec['puppet_metrics_collector_daemon_reload'],
+    notify  => Exec['puppet_metrics_collector_system_daemon_reload'],
   }
   service { "${metrics_type}-metrics.timer":
     ensure    => $service_ensure,
     enable    => $service_enable,
-    notify    => Exec['puppet_metrics_collector_daemon_reload'],
+    notify    => Exec['puppet_metrics_collector_system_daemon_reload'],
     subscribe => File["/etc/systemd/system/${metrics_type}-metrics.timer"],
   }
 
   service { "${metrics_type}-tidy.service":
-    notify  => Exec['puppet_metrics_collector_daemon_reload'],
+    notify  => Exec['puppet_metrics_collector_system_daemon_reload'],
   }
   service { "${metrics_type}-tidy.timer":
     ensure    => $service_ensure,
     enable    => $service_enable,
-    notify    => Exec['puppet_metrics_collector_daemon_reload'],
+    notify    => Exec['puppet_metrics_collector_system_daemon_reload'],
     subscribe => File["/etc/systemd/system/${metrics_type}-tidy.timer"],
   }
 

@@ -30,6 +30,7 @@ describe 'puppet_metrics_collector::pe_metric' do
   end
 
   describe 'remote metric collection' do
+    let(:facts) { { pe_server_version: '2019.8.3' } }
     it 'is disabled by default due to CVE-2020-7943' do
       expect(subject).to contain_file('/opt/puppetlabs/puppet-metrics-collector/config/test-service.yaml').with_content(%r{remote_metrics_enabled: false})
     end

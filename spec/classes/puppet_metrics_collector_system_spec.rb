@@ -1,10 +1,6 @@
 require 'spec_helper'
 
 describe 'puppet_metrics_collector::system' do
-  # This define has an undeclared dependency on the main
-  # puppet_metrics_collector class.
-  let(:pre_condition) { 'include puppet_metrics_collector' }
-
   context 'when the virtual fact does not report vmware' do
     let(:facts) { { virtual: 'physical' } }
 
