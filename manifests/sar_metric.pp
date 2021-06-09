@@ -15,15 +15,6 @@ define puppet_metrics_collector::sar_metric (
     'present' => directory,
     'absent'  => absent,
   }
-  $service_ensure = $metric_ensure ? {
-    'present' => running,
-    'absent'  => stopped,
-  }
-
-  $service_enable = $metric_ensure ? {
-    'present' => true,
-    'absent'  => false,
-  }
 
   file { $metrics_output_dir :
     ensure => $metrics_output_dir_ensure,
@@ -48,54 +39,12 @@ define puppet_metrics_collector::sar_metric (
 
   $tidy_command = "${puppet_metrics_collector::system::scripts_dir}/metrics_tidy -d ${metrics_output_dir} -r ${retention_days}"
 
-  file {"/etc/systemd/system/${metrics_type}-metrics.service":
-    ensure  => $metric_ensure,
-    content => epp('puppet_metrics_collector/service.epp',
-      { 'service' => $metrics_type, 'metrics_command' => $metrics_command }
-    ),
-    notify  => Exec['puppet_metrics_collector_system_daemon_reload'],
-  }
-  file {"/etc/systemd/system/${metrics_type}-metrics.timer":
-    ensure  => $metric_ensure,
-    content => epp('puppet_metrics_collector/timer.epp',
-      { 'service' => $metrics_type, 'minute' => $cron_minute },
-    ),
-    notify  => Exec['puppet_metrics_collector_system_daemon_reload'],
-  }
-
-  file {"/etc/systemd/system/${metrics_type}-tidy.service":
-    ensure  => $metric_ensure,
-    content => epp('puppet_metrics_collector/tidy.epp',
-      { 'service' => $metrics_type, 'tidy_command' => $tidy_command }
-    ),
-    notify  => Exec['puppet_metrics_collector_system_daemon_reload'],
-  }
-  file {"/etc/systemd/system/${metrics_type}-tidy.timer":
-    ensure  => $metric_ensure,
-    content => epp('puppet_metrics_collector/tidy_timer.epp',
-      { 'service' => $metrics_type }
-    ),
-    notify  => Exec['puppet_metrics_collector_system_daemon_reload'],
-  }
-
-  service { "${metrics_type}-metrics.service":
-    notify  => Exec['puppet_metrics_collector_system_daemon_reload'],
-  }
-  service { "${metrics_type}-metrics.timer":
-    ensure    => $service_ensure,
-    enable    => $service_enable,
-    notify    => Exec['puppet_metrics_collector_system_daemon_reload'],
-    subscribe => File["/etc/systemd/system/${metrics_type}-metrics.timer"],
-  }
-
-  service { "${metrics_type}-tidy.service":
-    notify  => Exec['puppet_metrics_collector_system_daemon_reload'],
-  }
-  service { "${metrics_type}-tidy.timer":
-    ensure    => $service_ensure,
-    enable    => $service_enable,
-    notify    => Exec['puppet_metrics_collector_system_daemon_reload'],
-    subscribe => File["/etc/systemd/system/${metrics_type}-tidy.timer"],
+  puppet_metrics_collector::collect {$metrics_type:
+    metrics_command => $metrics_command,
+    tidy_command    => $tidy_command,
+    metric_ensure   => $metric_ensure,
+    minute          => $cron_minute,
+    notify          => Exec['puppet_metrics_collector_system_daemon_reload'],
   }
 
   # LEGACY CLEANUP
